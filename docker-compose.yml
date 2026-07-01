@@ -1,0 +1,38 @@
+# Optional docker-compose. The primary deployment target is `uv run python -m src.main`
+# on the host — this file is for users who want the service isolated in a container.
+#
+# Caveats:
+# - tdl is COPIED INTO the image during build (see Dockerfile).
+# - hardlink dedup requires DATA_DIR and EXPORT_DIR to live on the same
+#   mounted volume. The compose here maps them under /state and /exports
+#   respectively; put them on the same host directory if you want dedup.
+
+services:
+  tg-exporter:
+    build: .
+    image: telegram-bulk-exporter:dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      WEB_HOST: "0.0.0.0"
+      WEB_PORT: "8765"
+      DATA_DIR: "/state"
+      EXPORT_DIR: "/exports"
+      TDL_BINARY_PATH: "/usr/local/bin/tdl"
+      LOG_LEVEL: "INFO"
+      # TELEGRAM_API_ID, TELEGRAM_API_HASH, PROXY, AUTO_LOCK_SECONDS —
+      # pass via .env or environment in your compose wrapper.
+    env_file:
+      # Optional: `docker compose up` works without a .env (credentials can be
+      # entered later via the web UI). Requires compose v2.24+ for `required`.
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/state
+      - ./exports:/exports
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8765/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

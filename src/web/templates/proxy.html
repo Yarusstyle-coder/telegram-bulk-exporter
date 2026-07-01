@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Прокси · Telegram Bulk Exporter{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+    <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+            <h1 class="text-xl font-semibold">Прокси</h1>
+            <p class="text-sm text-slate-500">
+                Telegram-клиент использует <span class="font-mono text-accent-300" id="active-marker">{{ active_url or '— нет активного —' }}</span>.
+                tdl поддерживает только <code>socks5</code>/<code>http</code>; MTProto-прокси работают только для Telethon (списки чатов и аватарки).
+            </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <button class="rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2 text-sm inline-flex items-center gap-2"
+                    hx-post="/proxy/test" hx-target="#proxy-grid" hx-swap="innerHTML">
+                <i data-lucide="activity" class="w-4 h-4"></i> Re-test all
+            </button>
+            <button class="rounded-xl bg-accent-600 hover:bg-accent-500 px-3 py-2 text-sm inline-flex items-center gap-2"
+                    hx-post="/proxy/auto" hx-target="#proxy-grid" hx-swap="innerHTML">
+                <i data-lucide="zap" class="w-4 h-4"></i> Авто-выбор лучшего
+            </button>
+            <button class="rounded-xl bg-slate-800 hover:bg-rose-600/40 px-3 py-2 text-sm inline-flex items-center gap-2"
+                    hx-post="/proxy/disable" hx-target="#proxy-grid" hx-swap="innerHTML"
+                    title="Telethon и tdl пойдут напрямую (нужен VPN или открытый интернет)">
+                <i data-lucide="zap-off" class="w-4 h-4"></i> Без прокси
+            </button>
+        </div>
+    </div>
+
+    <form
+        class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 grid md:grid-cols-[1fr_200px_120px] gap-2"
+        hx-post="/proxy"
+        hx-target="#proxy-grid"
+        hx-swap="innerHTML"
+    >
+        <input
+            name="url"
+            placeholder="mtproto://host:port?secret=...  или socks5://host:port  или https://t.me/proxy?..."
+            class="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-mono focus:border-accent-500 focus:outline-none"
+            required
+        />
+        <input
+            name="label"
+            placeholder="Заметка (необязательно)"
+            class="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
+        />
+        <button class="rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2 text-sm inline-flex items-center justify-center gap-2">
+            <i data-lucide="plus" class="w-4 h-4"></i> Добавить
+        </button>
+    </form>
+
+    <div id="proxy-grid" class="rounded-2xl border border-slate-800 bg-slate-900/40 divide-y divide-slate-800">
+        {% include "_proxy_fragment.html" %}
+    </div>
+</div>
+{% endblock %}

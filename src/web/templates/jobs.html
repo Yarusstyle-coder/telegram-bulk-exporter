@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}Задачи · Telegram Bulk Exporter{% endblock %}
+
+{% block content %}
+{# Pretty labels for the bulk-delete confirm dialog — must match the
+   slug → label mapping used for the filter pills below. #}
+{% set _bulk_label_map = {
+    'all':       'все задачи',
+    'active':    'активные задачи',
+    'paused':    'приостановленные задачи',
+    'succeeded': 'успешные задачи',
+    'failed':    'задачи с ошибками',
+    'cancelled': 'отменённые задачи',
+} %}
+{% set _bulk_label = _bulk_label_map.get(status_filter, 'задачи') %}
+{% set _bulk_count = jobs|length %}
+<div class="space-y-4">
+    <div class="flex items-center gap-2 flex-wrap">
+        <h1 class="text-xl font-semibold">Задачи</h1>
+        <span class="text-sm text-slate-500">Активных: {{ status_counts.active }}</span>
+        {# Bulk-delete current view — visible only when there's something to
+           wipe. Active jobs get cancelled first inside JobManager.delete,
+           so tdl children die cleanly. Media on disk is NOT touched. #}
+        {% if _bulk_count > 0 %}
+        <button
+            type="button"
+            id="bulk-delete-btn"
+            class="ml-auto inline-flex items-center gap-2 rounded-xl bg-rose-700/80 hover:bg-rose-600 px-3 py-1.5 text-sm font-medium transition"
+            title="Остановить и удалить все задачи в текущей вкладке. Скачанные файлы на диске останутся."
+            data-status="{{ status_filter }}"
+            data-label="{{ _bulk_label }}"
+            data-count="{{ _bulk_count }}"
+            onclick="deleteAllVisible(this)"
+        >
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            Удалить {{ _bulk_label }} ({{ _bulk_count }})
+        </button>
+        {% endif %}
+    </div>
+
+    {# Status filter pills. Server-side filter via ?status= query param.
+       Each pill is a plain <a> link so the URL is shareable and the
+       browser back-button works. Active pill gets a tinted background
+       matching its status's row badge colour. #}
+    {% set pill_specs = [
+        ('all',       'Все',                  'bg-slate-700',      'text-slate-100'),
+        ('active',    'Активные',             'bg-accent-500/30',  'text-accent-200'),
+        ('paused',    'Приостановлены',       'bg-slate-700',      'text-slate-200'),
+        ('succeeded', 'Успешные',             'bg-emerald-500/20', 'text-emerald-200'),
+        ('failed',    'Ошибки',               'bg-rose-500/20',    'text-rose-200'),
+        ('cancelled', 'Отменены',             'bg-slate-700',      'text-slate-300'),
+    ] %}
+    <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs uppercase tracking-wider text-slate-500">статус</span>
+        {% for slug, label, bg_cls, text_cls in pill_specs %}
+        <a href="/jobs?status={{ slug }}"
+           class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs border transition
+               {% if slug == status_filter %}
+                   {{ bg_cls }} {{ text_cls }} border-current
+               {% else %}
+                   bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300
+               {% endif %}">
+            {{ label }}
+            <span class="text-[10px] opacity-70">{{ status_counts.get(slug, 0) }}</span>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if jobs|length == 0 %}
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center text-sm text-slate-500">
+        {% if status_filter != 'all' %}
+            Нет задач в этой категории.
+            <a class="underline text-accent-400" href="/jobs?status=all">Показать все</a> или
+            создайте новую на странице <a class="underline text-accent-400" href="/chats">Чаты</a>.
+        {% else %}
+            Пока нет задач. Создайте новую на странице <a class="underline text-accent-400" href="/chats">Чаты</a>.
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/40 divide-y divide-slate-800">
+        {% for j in jobs %}
+        <div class="p-4 flex flex-col gap-2" data-job-id="{{ j.id }}">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        {% set first_id = (j.settings.chat_ids[0] if j.settings.chat_ids else None) %}
+                        {% set first_label = chat_labels.get(first_id) if first_id is not none else None %}
+                        <span class="font-medium truncate">
+                            {% if first_label %}
+                                {{ first_label }}
+                            {% elif first_id is not none %}
+                                <span class="font-mono text-slate-400">{{ first_id }}</span>
+                            {% else %}
+                                <span class="text-slate-500">— без чатов —</span>
+                            {% endif %}
+                            {% if j.settings.chat_ids|length > 1 %}
+                                <span class="text-xs text-slate-500">+ ещё {{ j.settings.chat_ids|length - 1 }}</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                        <a href="/jobs/{{ j.id }}" class="font-mono hover:text-accent-300 hover:underline">{{ j.id[:8] }}</a>
+                        <span>·</span>
+                        <span>{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </div>
+                </div>
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium shrink-0
+                    {% if j.status.value == 'running' %}bg-accent-500/15 text-accent-300
+                    {% elif j.status.value == 'succeeded' %}bg-emerald-500/15 text-emerald-300
+                    {% elif j.status.value == 'failed' %}bg-rose-500/15 text-rose-300
+                    {% elif j.status.value == 'cancelled' %}bg-slate-700 text-slate-300
+                    {% else %}bg-slate-700 text-slate-200{% endif %}">
+                    {{ j.status.value }}
+                </span>
+                {# Delete (X) button — wipes the job from memory + DB.
+                   Cancels the runner first if it's still running so any
+                   tdl child gets killed cleanly. Media on disk stays. #}
+                <button
+                    type="button"
+                    class="shrink-0 p-1 rounded text-slate-500 hover:text-rose-300 hover:bg-rose-500/10 transition"
+                    title="Удалить задачу (медиа на диске не трогает)"
+                    onclick="deleteJob('{{ j.id }}', this)"
+                >
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="h-2 bg-slate-800 rounded overflow-hidden">
+                <div
+                    class="h-full bg-gradient-to-r from-accent-500 via-accent-400 to-violet-500 animate-shimmer bg-[length:200%_100%]"
+                    style="width: {{ '%.0f'|format(j.percent) }}%"
+                ></div>
+            </div>
+            <div class="flex justify-between text-xs text-slate-500">
+                <span>
+                    {% if j.status.value == 'succeeded' and j.files_deduped %}
+                        {{ j.files_deduped }} файлов
+                        {% if j.bytes_saved %}
+                            · сэконом. {{ '%.1f'|format(j.bytes_saved / 1073741824) }} GiB через hardlinks
+                        {% endif %}
+                    {% else %}
+                        {{ j.current }}/{{ j.total }}
+                    {% endif %}
+                </span>
+                <span>{{ '%.0f'|format(j.percent) }}%</span>
+                <span>
+                    {% set n = j.settings.chat_ids|length %}
+                    {% if n == 0 %}— нет чатов
+                    {% elif n == 1 %}1 чат
+                    {% elif n in (2, 3, 4) %}{{ n }} чата
+                    {% else %}{{ n }} чатов
+                    {% endif %}
+                </span>
+            </div>
+
+            {% if j.status.value == 'paused' %}
+            <div class="flex gap-2 mt-1">
+                <button
+                    class="text-xs px-2 py-1 rounded bg-accent-600/80 hover:bg-accent-500 inline-flex items-center gap-1"
+                    hx-post="/jobs/{{ j.id }}/resume"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
+                    title="Возобновить с last_exported_message_id"
+                >
+                    <i data-lucide="play" class="w-3 h-3"></i>
+                    Возобновить
+                </button>
+            </div>
+            {% elif j.status.value == 'failed' %}
+            {% if j.error %}
+            <div class="text-xs text-rose-300/80 mt-1 px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20">
+                <i data-lucide="alert-triangle" class="w-3 h-3 inline-block mr-1"></i>
+                {{ j.error }}
+            </div>
+            {% endif %}
+            <div class="flex gap-2 mt-1">
+                <button
+                    class="text-xs px-2 py-1 rounded bg-amber-600/80 hover:bg-amber-500 inline-flex items-center gap-1"
+                    hx-post="/jobs/{{ j.id }}/retry"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
+                    title="Повторить с last_exported_message_id"
+                >
+                    <i data-lucide="rotate-cw" class="w-3 h-3"></i>
+                    Повторить
+                </button>
+            </div>
+            {% elif j.status.value in ('running','exporting','downloading','deduping') %}
+            <div class="flex gap-2 mt-1">
+                <button
+                    class="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 inline-flex items-center gap-1"
+                    hx-post="/jobs/{{ j.id }}/pause"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
+                >
+                    <i data-lucide="pause" class="w-3 h-3"></i>
+                    Пауза
+                </button>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+/* Delete-job handler. Confirms once, hits POST /jobs/{id}/delete, then
+   removes the row from the DOM (no full page reload). Falls back to a
+   reload if the row removal fails for any reason. */
+async function deleteJob(jobId, btn) {
+    if (!confirm('Удалить задачу из списка? Скачанные файлы на диске останутся.')) return;
+    btn.disabled = true;
+    try {
+        const r = await fetch('/jobs/' + jobId + '/delete', {method: 'POST'});
+        if (!r.ok) {
+            const data = await r.json().catch(() => ({detail: 'HTTP ' + r.status}));
+            alert('Не удалось удалить: ' + (data.detail || r.status));
+            btn.disabled = false;
+            return;
+        }
+        const row = document.querySelector('[data-job-id="' + jobId + '"]');
+        if (row) row.remove();
+        else window.location.reload();
+    } catch (e) {
+        alert('Сеть/JS-ошибка: ' + e);
+        btn.disabled = false;
+    }
+}
+
+/* Bulk-delete all jobs in the current filter view. POST hits
+   /jobs/bulk-delete?status=<slug>; the server cancels each running
+   runner first (kills tdl), then drops the row from memory + DB.
+   Media on disk is preserved — only audit-trail rows go away. */
+async function deleteAllVisible(btn) {
+    const status = btn.dataset.status || 'active';
+    const label = btn.dataset.label || 'задачи';
+    const count = btn.dataset.count || '?';
+    const msg =
+        `Остановить и удалить ${label} (${count} шт.)?\n\n` +
+        'Активные задачи будут отменены (tdl завершится), ' +
+        'затем строки исчезнут из списка.\n' +
+        'Скачанные файлы на диске останутся.';
+    if (!confirm(msg)) return;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="animate-spin">⟳</span> Удаляю…';
+    try {
+        const r = await fetch(
+            '/jobs/bulk-delete?status=' + encodeURIComponent(status),
+            {method: 'POST'},
+        );
+        if (!r.ok) {
+            const data = await r.json().catch(() => ({detail: 'HTTP ' + r.status}));
+            alert('Не удалось удалить пачку: ' + (data.detail || r.status));
+            btn.disabled = false;
+            btn.innerHTML = orig;
+            return;
+        }
+        const body = await r.json();
+        const fails = (body.failed || []).length;
+        if (fails) {
+            alert(
+                `Удалено: ${(body.deleted || []).length}.\n` +
+                `Не удалось: ${fails} — смотри лог сервера.`,
+            );
+        }
+        window.location.reload();
+    } catch (e) {
+        alert('Сеть/JS-ошибка: ' + e);
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
+</script>
+{% endblock %}

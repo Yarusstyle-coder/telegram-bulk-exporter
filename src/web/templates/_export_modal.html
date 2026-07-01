@@ -1,0 +1,255 @@
+{# Export modal — opened by a custom event 'open-export-modal' dispatched
+   from the chats page after selection. Expects `selected` to be a list
+   of chat ids pulled from checkboxes. Submits JSON to POST /jobs. #}
+<div
+    x-data="exportModal()"
+    x-show="open"
+    x-cloak
+    @open-export-modal.window="openModal($event)"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm"
+>
+    <div class="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 space-y-4" @click.outside="open = false">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Параметры экспорта</h2>
+            <button class="text-slate-500 hover:text-slate-300" @click="open = false">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <p class="text-sm text-slate-400">
+            <span x-text="chatIds.length"></span> чата выбрано.
+            <span x-show="chatIds.length > 1" class="text-xs text-slate-500 block mt-1">
+                На каждый чат создаётся отдельная задача — прогресс будет видно прямо в списке чатов.
+            </span>
+        </p>
+
+        <fieldset>
+            <legend class="text-xs uppercase tracking-wider text-slate-500 mb-2">Типы медиа</legend>
+            <div class="grid grid-cols-2 gap-2 text-sm">
+                <template x-for="opt in mediaOptions" :key="opt.value">
+                    <label class="inline-flex items-center gap-2 rounded-xl border border-slate-800 px-3 py-2 hover:bg-slate-800/60">
+                        <input type="checkbox"
+                               :value="opt.value"
+                               x-model="mediaTypes"
+                               class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-accent-500" />
+                        <span x-text="opt.label"></span>
+                    </label>
+                </template>
+            </div>
+        </fieldset>
+
+        <label class="flex items-center gap-3 text-sm">
+            <input type="range" min="0" max="2048" step="16" x-model.number="maxSizeMb" class="flex-1 accent-accent-500" />
+            <span class="text-slate-400 w-24 text-right">
+                <span x-text="maxSizeMb ? maxSizeMb + ' MiB' : 'без лимита'"></span>
+            </span>
+        </label>
+
+        <div class="grid grid-cols-2 gap-3 text-sm">
+            <label class="flex items-center gap-2">
+                <input type="checkbox" x-model="onlyNew" class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-accent-500" />
+                <span>Только новые сообщения</span>
+            </label>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" x-model="dedup" class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-accent-500" />
+                <span>Дедупликация (hardlinks)</span>
+            </label>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" x-model="withContent" class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-accent-500" />
+                <span>Экспортировать текст</span>
+            </label>
+        </div>
+
+        <fieldset class="space-y-2">
+            <legend class="text-xs uppercase tracking-wider text-slate-500 mb-1">Тестовый прогон</legend>
+            <div class="flex flex-wrap gap-2 text-xs">
+                <template x-for="n in [0, 20, 50, 200, 1000]" :key="n">
+                    <button type="button"
+                        @click="recentMessages = n || null"
+                        :class="(recentMessages || 0) === n ? 'bg-accent-600 text-white border-accent-500' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'"
+                        class="rounded-full px-3 py-1 border transition"
+                        x-text="n === 0 ? 'Без лимита' : `Последние ${n}`"></button>
+                </template>
+            </div>
+            <p class="text-[11px] text-slate-500">Если задано — берёт только N последних сообщений (proof-of-concept на больших чатах).</p>
+        </fieldset>
+
+        <fieldset class="space-y-2">
+            <legend class="text-xs uppercase tracking-wider text-slate-500 mb-1">Период</legend>
+            <div class="flex flex-wrap gap-2 text-xs">
+                <template x-for="p in datePresets" :key="p.label">
+                    <button type="button"
+                        @click="applyDatePreset(p.years)"
+                        :class="datePreset === p.label ? 'bg-accent-600 text-white border-accent-500' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'"
+                        class="rounded-full px-3 py-1 border transition"
+                        x-text="p.label"></button>
+                </template>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <label class="flex flex-col gap-1">
+                    <span class="text-slate-400">С даты</span>
+                    <input type="date" x-model="dateFrom"
+                        class="rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100" />
+                </label>
+                <label class="flex flex-col gap-1">
+                    <span class="text-slate-400">По дату</span>
+                    <input type="date" x-model="dateTo"
+                        class="rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-100" />
+                </label>
+            </div>
+        </fieldset>
+
+        <div class="grid grid-cols-2 gap-3 text-sm">
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-slate-500">Потоков на файл</span>
+                <input type="number" min="1" max="16" x-model.number="threads" class="rounded-xl bg-slate-800 border border-slate-700 px-3 py-2" />
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-slate-500">Параллельных задач</span>
+                <input type="number" min="1" max="8" x-model.number="parallel" class="rounded-xl bg-slate-800 border border-slate-700 px-3 py-2" />
+            </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+            <button class="rounded-xl bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700" @click="open = false">Отмена</button>
+            <button
+                class="rounded-xl bg-accent-600 px-4 py-2 text-sm font-medium hover:bg-accent-500 disabled:opacity-40"
+                :disabled="mediaTypes.length === 0 || chatIds.length === 0 || submitting"
+                @click="submit()"
+            >
+                <span x-show="!submitting">Запустить экспорт</span>
+                <span x-show="submitting">Отправляем…</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function exportModal() {
+    return {
+        open: false,
+        submitting: false,
+        chatIds: [],
+        mediaOptions: [
+            { value: 'photo',      label: 'Фото' },
+            { value: 'video',      label: 'Видео' },
+            { value: 'voice',      label: 'Голосовые' },
+            { value: 'video_note', label: 'Видеосообщения' },
+            { value: 'audio',      label: 'Аудио' },
+            { value: 'document',   label: 'Документы' },
+            { value: 'sticker',    label: 'Стикеры' },
+            { value: 'gif',        label: 'GIF' },
+        ],
+        mediaTypes: ['photo', 'video', 'voice', 'video_note', 'audio', 'document', 'sticker', 'gif'],
+        maxSizeMb: 0,
+        onlyNew: true,
+        dedup: true,
+        withContent: true,
+        threads: 4,
+        parallel: 2,
+        recentMessages: null,
+        dateFrom: '',
+        dateTo: '',
+        datePreset: 'Всё время',
+        datePresets: [
+            { label: 'Всё время',     years: null },
+            { label: 'Последний год', years: 1 },
+            { label: 'Последние 2',   years: 2 },
+            { label: 'Последние 3',   years: 3 },
+        ],
+        applyDatePreset(years) {
+            const labels = { null: 'Всё время', 1: 'Последний год', 2: 'Последние 2', 3: 'Последние 3' };
+            this.datePreset = labels[String(years)] || 'Всё время';
+            if (years === null) {
+                this.dateFrom = ''; this.dateTo = '';
+            } else {
+                const d = new Date();
+                d.setFullYear(d.getFullYear() - years);
+                this.dateFrom = d.toISOString().slice(0, 10);
+                this.dateTo = '';
+            }
+        },
+        openModal(e) {
+            this.chatIds = e.detail || [];
+            if (!this.chatIds.length) {
+                const boxes = document.querySelectorAll('#chats-grid input[type=checkbox][data-chat-id]:checked');
+                this.chatIds = Array.from(boxes).map(b => parseInt(b.dataset.chatId, 10));
+            }
+            this.open = true;
+        },
+        async submit() {
+            this.submitting = true;
+            // One job per chat — matches the /chats/sync-stale flow so each
+            // chat gets its own row in /jobs AND its own "⟳ Идёт N%" pill
+            // next to it on the chats grid. Bundling N chats into a single
+            // job hid all but the first chat's progress and made the
+            // per-row sync poller useless (it shared one global percent
+            // across every chat in the bundle).
+            const sharedPayload = {
+                media_types: this.mediaTypes,
+                max_file_size_bytes: this.maxSizeMb ? this.maxSizeMb * 1024 * 1024 : null,
+                only_new: this.onlyNew,
+                dedup: this.dedup,
+                with_content: this.withContent,
+                threads_per_file: this.threads,
+                parallel_tasks: this.parallel,
+                date_from: this.dateFrom || null,
+                date_to: this.dateTo || null,
+                recent_messages: this.recentMessages || null,
+            };
+            const submitOne = async (chatId) => {
+                const res = await fetch('/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...sharedPayload, chat_ids: [chatId] }),
+                });
+                if (res.ok) {
+                    const body = await res.json();
+                    return { ok: true, chat_id: chatId, job_id: body.job_id };
+                }
+                let msg;
+                try {
+                    const data = await res.json();
+                    msg = data.detail || JSON.stringify(data);
+                    if (data.errors) {
+                        msg += ' / ' + data.errors.map(e =>
+                            `${(e.loc || []).join('.')}: ${e.msg}`
+                        ).join('; ');
+                    }
+                } catch (_e) {
+                    msg = await res.text();
+                }
+                return { ok: false, chat_id: chatId, status: res.status, error: msg };
+            };
+            try {
+                const results = await Promise.all(this.chatIds.map(submitOne));
+                const ok = results.filter(r => r.ok);
+                const failed = results.filter(r => !r.ok);
+                if (failed.length) {
+                    const lines = failed.map(f =>
+                        `• чат ${f.chat_id}: (${f.status}) ${f.error}`
+                    ).join('\n');
+                    alert(
+                        `Создано задач: ${ok.length}. Не удалось: ${failed.length}.\n\n${lines}`
+                    );
+                }
+                this.open = false;
+                if (ok.length === 1 && this.chatIds.length === 1) {
+                    // Single-chat path — keep the legacy behaviour and jump
+                    // straight to that job's detail page so the user can
+                    // watch the log stream live.
+                    window.location.href = '/jobs/' + ok[0].job_id;
+                } else if (ok.length > 0) {
+                    // Multi-chat path — stay on /chats so every row's
+                    // "⟳ Идёт N%" pill becomes visible. A full reload
+                    // re-runs _bootstrapSyncPollers which auto-attaches a
+                    // poller to each new pill.
+                    window.location.href = '/chats';
+                }
+            } finally {
+                this.submitting = false;
+            }
+        },
+    };
+}
+</script>

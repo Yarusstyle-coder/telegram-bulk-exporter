@@ -1,0 +1,113 @@
+[project]
+name = "telegram-bulk-exporter"
+version = "0.1.0"
+description = "Local-first bulk Telegram chat exporter with realtime incremental sync (web UI over Telethon + tdl)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Yaroslav" }]
+keywords = ["telegram", "export", "tdl", "privacy", "sync"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+]
+
+urls = { Repository = "https://github.com/Yarusstyle-coder/telegram-bulk-exporter", Issues = "https://github.com/Yarusstyle-coder/telegram-bulk-exporter/issues" }
+
+dependencies = [
+    # Web
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "itsdangerous>=2.2",
+    "websockets>=13",
+    # Data
+    "sqlalchemy[asyncio]>=2.0.36",
+    "aiosqlite>=0.20",
+    "alembic>=1.14",
+    # Telegram
+    "telethon>=1.38",
+    "cryptg>=0.5",  # speedup for Telethon
+    "pysocks>=1.7",  # SOCKS5/HTTP proxy backend for Telethon
+    "python-socks>=2.8",  # extra proxy support
+    "keyring>=25.0",  # OS-native secret storage (Windows DPAPI / macOS Keychain / libsecret)
+    # Config
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+    # Crypto
+    "cryptography>=44.0",
+    "argon2-cffi>=23.1",
+    "pyotp>=2.9",
+    "segno>=1.6",
+    "zxcvbn>=4.4",
+    # Utilities
+    "httpx>=0.28",
+    "rich>=13.9",
+    "structlog>=24.4",
+    "python-slugify>=8.0",
+    "qrcode>=7.4",
+    "pillow>=11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "pytest-mock>=3.14",
+    "httpx>=0.28",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-qrcode",
+]
+[project.scripts]
+tg-export = "src.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "PTH"]
+# B008 : FastAPI Depends() idiom uses function calls in defaults
+# UP042: StrEnum is 3.11+ but we prefer the explicit (str, Enum) pattern
+# B017 : `pytest.raises(Exception)` is acceptable for IntegrityError-wrapper tests
+# SIM105: prefer try/except/pass over contextlib.suppress for readability
+# PTH105: os.replace is still the clearest atomic-rename spelling
+ignore = ["E501", "B008", "UP042", "B017", "SIM105", "PTH105"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = ["telethon.*", "pyotp.*", "segno.*", "zxcvbn.*", "qrcode.*"]
+ignore_missing_imports = true

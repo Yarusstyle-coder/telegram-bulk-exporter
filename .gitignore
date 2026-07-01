@@ -1,0 +1,106 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# uv
+.python-version
+
+# Project data (secrets & user data)
+data/
+exports/
+!data/.keep
+!exports/.keep
+
+# AI-assistant local state (agent definitions, worktrees, session data) —
+# developer tooling, never part of the published project.
+.claude/
+.claude-flow/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+!.env.example
+
+# Logs
+*.log
+
+# tdl binary (bundled in tools/)
+# Downloaded on demand via scripts/fetch_tdl.ps1 / scripts/fetch_tdl.sh —
+# never commit the binary itself.
+tools/tdl/
+
+# Tests scratch
+/tmp/
+tests/tmp/
+
+# Local password / backup-code stash — NEVER commit these
+master*.txt
+*backup*codes*.txt
+backup-codes*.txt
+# stray files / directories some sub-tools sometimes leave at repo root
+# (numeric / single-word names that match python literals — likely shell
+# heredoc / glob artefacts; never legitimate source).
+/Any
+/None
+/16
+/HTMLResponse
+/for
+/Type
+/type
+/bytes
+/(token
+/(parents
+/Iterable*
+/AsyncIterator*
+/dict*
+/list*
+/await/
+/client.download_profile_photo*/
+/exist_ok/
+/file/
+/if/
+/Path/
+/Path(path)/
+/return/
+/str(dest))/
+/True/
+/True)/
+/ChatState/
+/datetime/
+/ProxyEntry/
+/tuple[Any/
+/[0-9]
+/[0-9][0-9]
+/[0-9][0-9][0-9]
+# The single-word / numeric-name entries above are a defensive net against
+# shell-heredoc glob mishaps (stray files matching Python literals dropped
+# at the repo root). Add specific names to that list above as new patterns
+# turn up; there is no additional catch-all rule beyond what's listed.
+
+# Local AI-assistant tooling (instructions + heredoc-artifact cleaners) - not part of the release
+CLAUDE.md
+cleanup.bat
+cleanup.sh

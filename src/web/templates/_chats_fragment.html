@@ -1,0 +1,234 @@
+{# Out-of-band counter / timestamp updates so the parent page reflects the
+   filter results without a full reload. Only rendered when this template is
+   served as a standalone fragment (HTMX swap) — when included from
+   chats.html the parent already renders the canonical elements, so emitting
+   them here too would duplicate the DOM ids. The route sets `is_oob=True`
+   on the response context to opt in. #}
+{% if is_oob %}
+{% if filtered_count is defined and total_count is defined %}
+<span id="chats-counter" hx-swap-oob="true" class="text-xs text-slate-400">
+    {{ filtered_count }} из {{ total_count }} в списке
+</span>
+{% endif %}
+{% if last_refreshed_human is defined and last_refreshed_human %}
+<span id="chats-last-refreshed"
+      hx-swap-oob="true"
+      class="text-xs text-slate-500"
+      title="{{ last_refreshed_iso or '' }}">
+    Список обновлён {{ last_refreshed_human }}
+</span>
+{% endif %}
+{% if stale_count is defined %}
+{# Keep the bulk "Sync all stale" badge in sync with the actual count.
+   The button visibility itself can't be toggled via OOB swap on its
+   class list, so we hide/show via inline style — Tailwind 'hidden'
+   class is yanked here when count>0 and re-applied when 0. #}
+<span id="stale-count" hx-swap-oob="true">{{ stale_count }}</span>
+{% endif %}
+{% if sync_counts is defined %}
+{# Re-render every pill badge so the counts on the sync-state filter
+   row are fresh after a HTMX swap / post-sync reload. Without these
+   the user sees "С новыми 1" with an empty grid because the pill
+   count was computed at initial page load and the grid swap can't
+   reach the parent template's rendering. #}
+{% for slug in ['all', 'synced', 'stale', 'syncing', 'never'] %}
+<span id="sync-count-{{ slug }}" hx-swap-oob="true" class="opacity-70 text-[10px]">{{ sync_counts.get(slug, 0) }}</span>
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if error %}
+<div class="p-4 text-sm text-rose-300">{{ error }}</div>
+{% elif chats|length == 0 %}
+<div class="p-6 text-center text-slate-500 text-sm">
+    Чатов пока нет. Нажмите «Обновить список», чтобы подтянуть их из Telegram.
+</div>
+{% else %}
+{% if refreshed is defined %}
+<div class="px-4 py-2 text-xs text-emerald-300 bg-emerald-500/10 border-b border-emerald-500/20">
+    Список обновлён — загружено {{ refreshed }} диалогов
+</div>
+{% endif %}
+<ul role="list" class="divide-y divide-slate-800">
+    {% for c in chats %}
+    {# Stale row = previously exported but a newer message appeared in
+       Telegram since the last export. Subtle amber tint + dot indicator
+       in the title row, plus a "Synchronize" button on the right. #}
+    <li
+        data-chat-row="{{ c.id }}"
+        class="flex items-center gap-3 px-4 py-3 transition cursor-pointer select-none
+            {% if c.is_stale %}
+                bg-amber-500/[0.04] hover:bg-amber-500/10 border-l-2 border-amber-500/70
+            {% else %}
+                hover:bg-slate-900/80
+            {% endif %}"
+        ondblclick="openChatTranscript({{ c.id }}, event)"
+        title="Двойной клик — открыть транскрипт чата (или кнопка «Открыть» справа)"
+    >
+        <input
+            type="checkbox"
+            data-chat-id="{{ c.id }}"
+            class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-accent-500 focus:ring-accent-500"
+            onclick="event.stopPropagation()"
+            ondblclick="event.stopPropagation()"
+        />
+        <div class="w-8 h-8 rounded-full bg-slate-800 overflow-hidden flex items-center justify-center text-xs text-slate-400">
+            {% if c.avatar_path %}
+                <img src="/avatars/{{ c.id }}" alt="" class="w-full h-full object-cover"/>
+            {% else %}
+                {{ (c.title or '?')|upper|truncate(2, True, '') }}
+            {% endif %}
+        </div>
+        <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+                {% if c.is_stale %}
+                    <span class="inline-block w-2 h-2 rounded-full bg-amber-400"
+                          title="Есть новые сообщения после последней синхронизации"></span>
+                {% endif %}
+                <span class="font-medium truncate">{{ c.title }}</span>
+                {% if c.username %}<span class="text-xs text-slate-500">@{{ c.username }}</span>{% endif %}
+                <span class="ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium
+                    {% if c.type == 'private' %}bg-accent-500/15 text-accent-300
+                    {% elif c.type == 'group' %}bg-emerald-500/15 text-emerald-300
+                    {% elif c.type == 'supergroup' %}bg-emerald-500/15 text-emerald-300
+                    {% elif c.type == 'channel' %}bg-violet-500/15 text-violet-300
+                    {% elif c.type == 'bot' %}bg-amber-500/15 text-amber-300
+                    {% else %}bg-slate-700 text-slate-200{% endif %}">
+                    {{ c.type }}
+                </span>
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5 flex items-center gap-3">
+                {% if c.approx_message_count %}
+                    <span>≈{{ c.approx_message_count }} сообщений</span>
+                {% endif %}
+                {% if c.is_stale %}
+                    <span class="inline-flex items-center gap-1 text-amber-300">
+                        <i data-lucide="circle-alert" class="w-3 h-3"></i>
+                        есть новые после
+                        {{ c.last_export_at.strftime('%Y-%m-%d %H:%M') if c.last_export_at else '' }}
+                    </span>
+                {% elif c.last_export_at %}
+                    <span class="inline-flex items-center gap-1 text-emerald-400">
+                        <i data-lucide="check" class="w-3 h-3"></i>
+                        синхронизирован до #{{ c.last_exported_message_id }}
+                    </span>
+                {% else %}
+                    <span class="text-slate-500">ещё не экспортировался</span>
+                {% endif %}
+                {% if c.total_files %}
+                    <span>{{ c.total_files }} файлов</span>
+                {% endif %}
+                {% if c.total_size_bytes %}
+                    <span>{{ '%.1f'|format(c.total_size_bytes / 1048576) }} MiB</span>
+                {% endif %}
+            </div>
+        </div>
+        {# Live "syncing now" pill. Hoisted OUT of the c.last_export_at
+           gate below so a never-exported chat with a mid-flight first-
+           time export ALSO gets the "⟳ Идёт N%" badge. Without this
+           lift, the bulk-export modal would silently sync those chats
+           with no visible feedback (the pill was previously only
+           rendered for chats that already had last_export_at set).
+           The data-* attributes hand the JS poller in chats.html
+           a hook to find, refresh, and remove the pill once the
+           underlying job finishes — same machinery, broader audience. #}
+        {% if c.sync_in_progress %}
+        <button
+            type="button"
+            disabled
+            class="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium
+                   bg-slate-700 text-slate-300 cursor-wait opacity-80"
+            title="Синхронизация идёт — следи на странице /jobs или подожди здесь"
+            data-syncing-chat-id="{{ c.id }}"
+            data-sync-job-id="{{ c.sync_job_id or '' }}"
+        >
+            <span class="animate-spin">⟳</span>
+            Идёт <span class="sync-percent" data-sync-percent>{{ '%.0f'|format(c.sync_percent) }}%</span>
+        </button>
+        {% endif %}
+        {% if c.last_export_at %}
+            {# Explicit "Открыть" button as a click-only fallback for the
+               double-click handler — useful when the user already has an
+               editor tab open (browser tab-reuse heuristics can swallow a
+               second window.open) or just prefers a click. #}
+            <button
+                type="button"
+                class="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition
+                       bg-slate-800 hover:bg-slate-700 text-slate-300 opacity-70 hover:opacity-100"
+                title="Открыть транскрипт чата в новой вкладке"
+                onclick="event.stopPropagation(); openChatTranscript({{ c.id }}, event)"
+                ondblclick="event.stopPropagation()"
+            >
+                <i data-lucide="external-link" class="w-3 h-3"></i>
+                Открыть
+            </button>
+            {# "Auto-update" toggle — flip ChatState.watch_enabled for this
+               chat. Emerald when on (auto-update is active), slate when off.
+               Positioned between "Открыть" and "Синхр." for logical grouping. #}
+            <button
+                type="button"
+                data-on="{{ 'true' if c.auto_update else 'false' }}"
+                class="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition
+                    {% if c.auto_update %}
+                        bg-emerald-700 hover:bg-emerald-600 text-emerald-50
+                    {% else %}
+                        bg-slate-800 hover:bg-slate-700 text-slate-300 opacity-70 hover:opacity-100
+                    {% endif %}"
+                title="Авто-обновление: {% if c.auto_update %}вкл — нажмите, чтобы выключить{% else %}выкл — нажмите, чтобы включить{% endif %}"
+                onclick="event.stopPropagation(); toggleAutoUpdate(this, {{ c.id }})"
+                ondblclick="event.stopPropagation()"
+            >
+                <i data-lucide="timer" class="w-3 h-3"></i>
+                Авто
+            </button>
+            {# "Sync" button on any previously-exported chat that ISN'T
+               currently syncing (the active-sync state is covered by the
+               hoisted "⟳ Идёт N%" pill above). Two visual states:
+                 - Stale (last_msg > last_export_at) → amber "Синхр."
+                   inviting a sync.
+                 - Fresh → faded grey "Синхр.", clickable as a force-refresh. #}
+            {% if not c.sync_in_progress %}
+            <button
+                type="button"
+                class="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition
+                    {% if c.is_stale %}
+                        bg-amber-600 hover:bg-amber-500 text-white
+                    {% else %}
+                        bg-slate-800 hover:bg-slate-700 text-slate-300 opacity-70 hover:opacity-100
+                    {% endif %}"
+                title="{% if c.is_stale %}Докачать новые сообщения и медиа{% else %}Проверить нет ли нового{% endif %}"
+                onclick="event.stopPropagation(); syncOneChat(this, {{ c.id }})"
+                ondblclick="event.stopPropagation()"
+            >
+                <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                Синхр.
+            </button>
+            {% endif %}
+        {% endif %}
+        {# Per-chat delete — wipes the chats row (cascades to
+           chat_states + export_jobs in the route handler) and the
+           exports/<slug>/ folder with all media. ``media_pool``
+           hardlinks survive. Hidden during an active sync so the
+           user can't yank a folder out from under a running tdl.
+           Always shown (even on never-exported chats) so the row
+           can be removed if the local DB picked it up by mistake. #}
+        {% if not c.sync_in_progress %}
+        <button
+            type="button"
+            class="shrink-0 inline-flex items-center justify-center rounded-lg w-7 h-7 text-rose-300/80
+                   bg-slate-800 hover:bg-rose-600/30 hover:text-rose-200 border border-slate-700
+                   hover:border-rose-500/40 transition"
+            title="Удалить чат локально (БД + папка экспорта). Не трогает Telegram."
+            data-chat-title="{{ c.title or c.id }}"
+            data-has-export="{{ '1' if c.last_export_at else '0' }}"
+            data-files="{{ c.total_files or 0 }}"
+            data-bytes="{{ c.total_size_bytes or 0 }}"
+            onclick="event.stopPropagation(); deleteChatLocal({{ c.id }}, this)"
+            ondblclick="event.stopPropagation()"
+        >
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

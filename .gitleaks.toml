@@ -1,0 +1,19 @@
+# gitleaks config for telegram-bulk-exporter.
+#
+# Extends the stock ruleset. The allowlist scopes out the proxy-URL parser
+# tests, whose fixtures use sample MTProxy "secret=" strings (synthetic hex /
+# base64 share-tokens) purely to exercise parsing — they are NOT real
+# credentials. Run a scan before publishing / on CI:
+#
+#   gitleaks git .   # scans full history
+#   gitleaks dir .   # scans the working tree (note: does NOT honor .gitignore,
+#                    # so point it at tracked dirs or expect .venv/ noise)
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Proxy-parser test fixtures use sample proxy secrets, not real credentials."
+paths = [
+    '''tests/unit/test_proxy_parser\.py''',
+]

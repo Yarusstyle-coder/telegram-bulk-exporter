@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}tdl session — Telegram Bulk Exporter{% endblock %}
+
+{% block content %}
+<div class="space-y-4" x-data="tdlLogin({{ status | tojson }})">
+    <div class="flex items-start justify-between flex-wrap gap-3">
+        <div>
+            <h1 class="text-xl font-semibold">tdl session</h1>
+            <p class="text-sm text-slate-500 max-w-3xl">
+                Telethon (для списка чатов) и tdl (для скачивания медиа) хранят
+                сессии раздельно. После Telegram-логина нужно ещё один раз
+                авторизовать tdl. Это разовое действие — сессия сохранится
+                в <code>%USERPROFILE%\.tdl\data\default</code>.
+            </p>
+        </div>
+        <a href="/auth/telegram" class="rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2 text-sm inline-flex items-center gap-2">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i> К Telegram dashboard
+        </a>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-4">
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
+            <div class="flex items-center justify-between">
+                <h2 class="font-medium">Статус</h2>
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                    :class="{
+                        'bg-slate-700 text-slate-300': state==='idle' || state==='cancelled',
+                        'bg-amber-500/15 text-amber-300': state==='starting' || state==='waiting',
+                        'bg-emerald-500/15 text-emerald-300': state==='success',
+                        'bg-rose-500/15 text-rose-300': state==='error',
+                    }"
+                    x-text="state"></span>
+            </div>
+
+            <form method="post" action="/auth/telegram/tdl-login" class="space-y-2">
+                <label class="text-xs text-slate-400 uppercase tracking-wider">Режим</label>
+                <select name="mode" class="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-sm">
+                    <option value="qr" selected>QR-код (сканируйте телефоном)</option>
+                    <option value="desktop">Импорт из Telegram Desktop</option>
+                    <option value="code">SMS-код</option>
+                </select>
+                <div class="flex gap-2">
+                    <button class="rounded-xl bg-accent-600 hover:bg-accent-500 px-3 py-2 text-sm font-medium inline-flex items-center gap-2">
+                        <i data-lucide="play" class="w-4 h-4"></i> Запустить
+                    </button>
+                    <button type="button" class="rounded-xl bg-slate-800 hover:bg-rose-600/40 px-3 py-2 text-sm inline-flex items-center gap-2"
+                        @click="cancel()" :disabled="!isRunning">
+                        <i data-lucide="x" class="w-4 h-4"></i> Отмена
+                    </button>
+                </div>
+            </form>
+
+            <div class="text-xs text-slate-500 leading-relaxed space-y-2">
+                <p><b>QR / SMS:</b> tdl на Windows нужен реальный TTY,
+                    поэтому при «Запустить» откроется отдельное окно
+                    cmd — отсканируйте QR / введите код там, окно закроется
+                    автоматически.</p>
+                <p><b>Desktop:</b> tdl сам найдёт tdata установленного Telegram Desktop
+                    (моментально, без QR).</p>
+                <p class="pt-2 border-t border-slate-800">
+                    <b class="text-amber-300">Если окно не открылось</b> (например запускаете
+                    под IDE без права на новые консоли) — выполните в PowerShell прямо сейчас:
+                </p>
+                <pre class="bg-black/60 rounded p-2 text-[11px] text-emerald-300 select-all whitespace-pre overflow-x-auto">.\tools\tdl\tdl.exe -n default login -T qr</pre>
+                <p>после «Login successfully!» вернитесь на эту страницу — статус автоматически переключится в «success».</p>
+            </div>
+        </div>
+
+        <div class="rounded-2xl border border-slate-800 bg-black p-4">
+            <div class="text-xs text-slate-500 mb-2" x-text="paneTitle"></div>
+
+            <div x-show="state === 'idle'" class="text-sm text-slate-500 italic">
+                Нажмите «Запустить». Для режима QR / SMS откроется отдельное
+                окно tdl где будет интерактивный шаг (на Windows иначе tdl не
+                умеет отдавать QR в pipe).
+            </div>
+
+            <div x-show="state === 'starting' || state === 'waiting'" class="text-sm text-amber-200">
+                <i data-lucide="loader-2" class="w-4 h-4 inline animate-spin"></i>
+                Окно tdl должно было открыться. Сосчитай QR / введи код там.
+                Когда tdl выведет «Login successfully!» окно закроется и
+                здесь зажжётся зелёный.
+            </div>
+
+            <pre x-show="qrLines.length > 0" class="text-[8px] leading-[8px] font-mono text-white whitespace-pre overflow-auto" x-text="qrLines.join('\n')"></pre>
+
+            <div x-show="state === 'success'" class="text-emerald-300 text-sm space-y-1">
+                <div><i data-lucide="check-circle" class="w-4 h-4 inline"></i>
+                    tdl успешно авторизован. Можно запускать экспорт.</div>
+                <a href="/chats" class="underline">→ к чатам</a>
+            </div>
+            <div x-show="error" class="mt-2 text-rose-300 text-xs" x-text="error"></div>
+        </div>
+    </div>
+
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+        <div class="text-xs text-slate-500 mb-2">Лог tdl</div>
+        <pre class="text-xs font-mono text-slate-300 whitespace-pre-wrap overflow-auto max-h-48"
+             x-text="logLines.join('\n')"></pre>
+    </div>
+</div>
+
+<script>
+function tdlLogin(initial) {
+    return {
+        state: initial.state || 'idle',
+        qrLines: initial.qr_lines || [],
+        logLines: initial.log_lines || [],
+        error: initial.error || null,
+        timer: null,
+        get isRunning() { return this.state === 'starting' || this.state === 'waiting'; },
+        get paneTitle() {
+            if (this.state === 'success') return 'tdl авторизован';
+            if (this.state === 'waiting') return 'Ждём авторизацию в окне tdl…';
+            if (this.state === 'starting') return 'Запускаем tdl…';
+            if (this.state === 'error') return 'Ошибка';
+            return 'Окно tdl откроется отдельно (Windows TTY)';
+        },
+        init() {
+            this.poll();
+            this.timer = setInterval(() => this.poll(), 1500);
+        },
+        async poll() {
+            try {
+                const r = await fetch('/auth/telegram/tdl-login/status');
+                if (!r.ok) return;
+                const s = await r.json();
+                this.state = s.state;
+                this.qrLines = s.qr_lines || [];
+                this.logLines = s.log_lines || [];
+                this.error = s.error;
+            } catch (_) {}
+        },
+        async cancel() {
+            await fetch('/auth/telegram/tdl-login/cancel', {method: 'POST'});
+            await this.poll();
+        },
+    };
+}
+</script>
+{% endblock %}

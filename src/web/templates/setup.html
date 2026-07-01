@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-lg">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+        <div class="flex items-center gap-3 mb-4">
+            <i data-lucide="shield-check" class="w-6 h-6 text-accent-400"></i>
+            <h1 class="text-2xl font-semibold">Шаг 1. Мастер-пароль</h1>
+        </div>
+        <p class="text-sm text-slate-400 mb-6">
+            Мастер-пароль шифрует ключ базы данных. Он нигде не хранится — если потеряете,
+            восстановить данные будет невозможно. Минимум 12 символов, смешайте регистр, цифры,
+            символы.
+        </p>
+
+        {% if error %}
+        <div class="mb-4 rounded-lg border border-red-900/50 bg-red-950/40 p-3 text-sm text-red-300">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/setup" class="space-y-4"
+              x-data="{
+                pw: '',
+                score: 0,
+                warning: '',
+                suggestions: [],
+                async check() {
+                    if (!this.pw) { this.score = 0; this.warning = ''; this.suggestions = []; return; }
+                    if (!window._zxcvbn) {
+                        await new Promise((res) => {
+                            const s = document.createElement('script');
+                            s.src = 'https://cdn.jsdelivr.net/npm/zxcvbn@4.4.2/dist/zxcvbn.js';
+                            s.onload = res;
+                            document.head.appendChild(s);
+                        });
+                        window._zxcvbn = window.zxcvbn;
+                    }
+                    const r = window._zxcvbn(this.pw);
+                    this.score = r.score;
+                    this.warning = r.feedback.warning || '';
+                    this.suggestions = r.feedback.suggestions || [];
+                }
+              }">
+
+            <label class="block">
+                <span class="text-sm text-slate-300">Пароль</span>
+                <input type="password" name="password" required minlength="8"
+                       x-model="pw" @input.debounce.200ms="check"
+                       class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-slate-100 focus:border-accent-500 focus:outline-none" />
+            </label>
+
+            <div class="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                <div class="h-full transition-all"
+                     :class="{
+                        'bg-red-500': score <= 1,
+                        'bg-amber-500': score === 2,
+                        'bg-yellow-400': score === 3,
+                        'bg-emerald-500': score === 4,
+                     }"
+                     :style="'width:' + ((score + 1) * 20) + '%'">
+                </div>
+            </div>
+            <p class="text-xs" :class="score < 3 ? 'text-amber-400' : 'text-emerald-400'">
+                <span x-show="score < 3" x-text="warning || 'Нужен score ≥ 3.'"></span>
+                <span x-show="score >= 3">Надёжно.</span>
+            </p>
+            <ul class="text-xs text-slate-500 list-disc list-inside" x-show="suggestions.length">
+                <template x-for="s in suggestions"><li x-text="s"></li></template>
+            </ul>
+
+            <label class="block">
+                <span class="text-sm text-slate-300">Подтверждение</span>
+                <input type="password" name="password_confirm" required
+                       class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-slate-100 focus:border-accent-500 focus:outline-none" />
+            </label>
+
+            <button type="submit"
+                    class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 font-medium transition">
+                Создать хранилище
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="rounded-2xl border border-slate-800 bg-slate-900/50 p-8">
+    <h1 class="text-2xl font-semibold mb-2">Telegram Bulk Exporter</h1>
+    <p class="text-slate-400 max-w-2xl">
+        Локальный инструмент для массовой выгрузки чатов Telegram с инкрементальным
+        доэкспортом, дедупликацией медиа и полным шифрованием данных на диске.
+    </p>
+    <div class="mt-6 flex flex-wrap gap-3">
+        <a href="/setup" class="inline-flex items-center gap-2 rounded-xl bg-accent-600 px-4 py-2 text-sm font-medium hover:bg-accent-500 transition">
+            <i data-lucide="rocket" class="w-4 h-4"></i> Начать настройку
+        </a>
+        <a href="/chats" class="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-medium hover:bg-slate-700 transition">
+            <i data-lucide="list" class="w-4 h-4"></i> К списку чатов
+        </a>
+        <a href="/health" class="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-medium hover:bg-slate-700 transition">
+            <i data-lucide="activity" class="w-4 h-4"></i> Health
+        </a>
+    </div>
+</div>
+
+<div class="mt-8 grid gap-4 md:grid-cols-3">
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+        <div class="flex items-center gap-2 text-accent-400"><i data-lucide="zap" class="w-4 h-4"></i><span class="text-sm font-medium">tdl под капотом</span></div>
+        <p class="mt-2 text-sm text-slate-400">Многопоточная загрузка медиа, экспорт по диапазону message ID, нативная TDLib-производительность.</p>
+    </div>
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+        <div class="flex items-center gap-2 text-accent-400"><i data-lucide="refresh-cw" class="w-4 h-4"></i><span class="text-sm font-medium">Инкрементальный экспорт</span></div>
+        <p class="mt-2 text-sm text-slate-400">Локальный state хранит last_message_id; докачиваются только новые сообщения.</p>
+    </div>
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+        <div class="flex items-center gap-2 text-accent-400"><i data-lucide="shield-check" class="w-4 h-4"></i><span class="text-sm font-medium">Шифрование и 2FA</span></div>
+        <p class="mt-2 text-sm text-slate-400">AES-256-GCM поверх KEK+DEK (Argon2id), TOTP для входа, auto-lock сессии.</p>
+    </div>
+</div>
+{% endblock %}

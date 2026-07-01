@@ -1,0 +1,12 @@
+{% if error %}
+<div class="rounded-xl border border-rose-900/50 bg-rose-950/40 p-3 text-sm text-rose-200 flex items-start gap-2">
+    <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+    <span>{{ error }}</span>
+</div>
+{% endif %}
+{% if success %}
+<div class="rounded-xl border border-emerald-900/50 bg-emerald-950/40 p-3 text-sm text-emerald-200 flex items-start gap-2">
+    <i data-lucide="check-circle-2" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+    <span>{{ success }}</span>
+</div>
+{% endif %}

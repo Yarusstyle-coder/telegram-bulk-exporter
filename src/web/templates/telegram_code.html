@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-md">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 space-y-4">
+        <div class="flex items-center gap-3">
+            <i data-lucide="mail-check" class="w-6 h-6 text-accent-400"></i>
+            <h1 class="text-2xl font-semibold">Код подтверждения</h1>
+        </div>
+        <p class="text-sm text-slate-400">
+            {% if phone %}
+            Мы отправили 5-значный код в приложение Telegram на номер
+            <span class="font-mono text-slate-200">{{ phone }}</span>.
+            {% else %}
+            Введите код, который вы получили в приложении Telegram.
+            {% endif %}
+        </p>
+
+        {% if error %}
+        <div class="rounded-lg border border-rose-900/50 bg-rose-950/40 p-3 text-sm text-rose-300">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/auth/telegram/code" class="space-y-4"
+              x-data="{ code: '' }"
+              x-effect="if (/^\d{5}$/.test(code.replace(/\D/g, ''))) $el.requestSubmit()">
+            <label class="block">
+                <span class="text-sm text-slate-300">Код</span>
+                <input type="text" name="code" required
+                       inputmode="numeric" autocomplete="one-time-code" autofocus
+                       maxlength="7"
+                       x-model="code"
+                       class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-slate-100 tracking-[0.5em] text-center text-xl focus:border-accent-500 focus:outline-none" />
+            </label>
+            <button type="submit"
+                    class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 font-medium transition">
+                Подтвердить
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-md">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 space-y-4">
+        <div class="flex items-center gap-3">
+            <i data-lucide="phone" class="w-6 h-6 text-accent-400"></i>
+            <h1 class="text-2xl font-semibold">Номер телефона</h1>
+        </div>
+        <p class="text-sm text-slate-400">
+            Введите номер в международном формате E.164, например <code>+491701234567</code>.
+            На него придёт код подтверждения.
+        </p>
+
+        {% if error %}
+        <div class="rounded-lg border border-rose-900/50 bg-rose-950/40 p-3 text-sm text-rose-300">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/auth/telegram/start" class="space-y-4">
+            <label class="block">
+                <span class="text-sm text-slate-300">Номер телефона</span>
+                <input type="tel" name="phone" required autofocus
+                       placeholder="+491701234567"
+                       class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-slate-100 focus:border-accent-500 focus:outline-none" />
+            </label>
+            <button type="submit"
+                    class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 font-medium transition">
+                Получить код
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

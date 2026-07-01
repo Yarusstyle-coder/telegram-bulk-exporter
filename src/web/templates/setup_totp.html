@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-lg">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+        <div class="flex items-center gap-3 mb-4">
+            <i data-lucide="smartphone" class="w-6 h-6 text-accent-400"></i>
+            <h1 class="text-2xl font-semibold">Шаг 2. TOTP</h1>
+        </div>
+        <p class="text-sm text-slate-400 mb-4">
+            Отсканируйте QR-код в приложении-аутентификаторе (Aegis, 1Password, Google Authenticator)
+            и введите шестизначный код для подтверждения.
+        </p>
+
+        {% if qr_data_uri %}
+        <div class="flex items-center justify-center mb-4">
+            <img src="{{ qr_data_uri }}" alt="TOTP QR" class="rounded-lg border border-slate-700 bg-white p-2" />
+        </div>
+        {% endif %}
+
+        <p class="text-xs text-slate-500 break-all mb-4">
+            Если не получается QR, введите вручную:
+            <code class="text-accent-300">{{ secret }}</code>
+        </p>
+
+        {% if error %}
+        <div class="mb-4 rounded-lg border border-red-900/50 bg-red-950/40 p-3 text-sm text-red-300">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/setup/totp/verify" class="space-y-4"
+              x-data="{ code: '' }"
+              x-effect="if (code.length === 6) $el.requestSubmit()">
+            <label class="block">
+                <span class="text-sm text-slate-300">Код из приложения</span>
+                <input type="text" name="code" required
+                       inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"
+                       x-model="code" autofocus
+                       class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-slate-100 tracking-widest text-center text-lg focus:border-accent-500 focus:outline-none" />
+            </label>
+            <button type="submit"
+                    class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 font-medium transition">
+                Подтвердить
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

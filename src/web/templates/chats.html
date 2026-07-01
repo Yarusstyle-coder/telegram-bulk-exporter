@@ -1,0 +1,653 @@
+{% extends "base.html" %}
+{% block title %}Чаты · Telegram Bulk Exporter{% endblock %}
+
+{% block content %}
+<div
+    x-data="chatsPage()"
+    class="space-y-4"
+>
+    <div
+        class="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-4 pb-3 space-y-3
+               bg-slate-950/85 backdrop-blur supports-[backdrop-filter]:bg-slate-950/70
+               border-b border-slate-800"
+    >
+    <div class="flex flex-col md:flex-row md:items-center gap-3 justify-between">
+        <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-xl font-semibold">Чаты</h1>
+            <span class="text-sm text-slate-500" x-text="`${selected.length} из ${total} выбрано`"></span>
+            <span id="chats-counter" class="text-xs text-slate-400">
+                {{ filtered_count if filtered_count is defined else (chats|length) }} из {{ total_count if total_count is defined else (chats|length) }} в списке
+            </span>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center">
+            <button
+                class="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+                hx-post="/chats/refresh"
+                hx-target="#chats-grid"
+                hx-swap="innerHTML"
+                hx-indicator="#refresh-spinner"
+            >
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                Обновить список
+                <span id="refresh-spinner" class="htmx-indicator animate-spin">⟳</span>
+            </button>
+            <span id="chats-last-refreshed"
+                  class="text-xs text-slate-500"
+                  title="{{ last_refreshed_iso or '' }}">
+                {% if last_refreshed_human %}Список обновлён {{ last_refreshed_human }}{% endif %}
+            </span>
+            <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2 text-sm disabled:opacity-40"
+                :disabled="total === 0"
+                @click="selectAllVisible()"
+                title="Выбрать все чаты в текущем отфильтрованном списке"
+            >
+                <i data-lucide="check-square" class="w-4 h-4"></i>
+                Выбрать все (<span x-text="total"></span>)
+            </button>
+            <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2 text-sm"
+                x-show="selected.length > 0"
+                x-cloak
+                @click="deselectAll()"
+                title="Снять выделение со всех чатов"
+            >
+                <i data-lucide="square" class="w-4 h-4"></i>
+                Снять
+            </button>
+            {# "Sync all stale" — visible only when at least one chat has
+               new messages since its last export. Server-side counter is
+               injected via the template context + kept fresh via HTMX OOB
+               swap from /chats/fragment. #}
+            <button
+                type="button"
+                id="sync-all-stale-btn"
+                class="inline-flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-500 px-3 py-2 text-sm font-medium disabled:opacity-40
+                       {% if not stale_count %}hidden{% endif %}"
+                title="Докачать новые сообщения во всех ранее экспортированных чатах"
+                onclick="syncAllStale(this)"
+            >
+                <i data-lucide="refresh-ccw-dot" class="w-4 h-4"></i>
+                Синхронизировать устаревшие (<span id="stale-count">{{ stale_count or 0 }}</span>)
+            </button>
+            <button
+                class="inline-flex items-center gap-2 rounded-xl bg-accent-600 hover:bg-accent-500 px-4 py-2 text-sm font-medium disabled:opacity-40"
+                :disabled="selected.length === 0"
+                @click="$dispatch('open-export-modal')"
+            >
+                <i data-lucide="download-cloud" class="w-4 h-4"></i>
+                Экспортировать (<span x-text="selected.length"></span>)
+            </button>
+        </div>
+    </div>
+
+    {% if not telegram_connected %}
+    <div class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+        Telegram ещё не подключён.
+        <a href="/auth/telegram" class="underline">Подключите Telegram</a>, чтобы увидеть свои диалоги.
+    </div>
+    {% endif %}
+
+    <form
+        action="/auth/telegram/join"
+        method="post"
+        class="rounded-xl border border-slate-800 bg-slate-900/30 p-3 grid md:grid-cols-[1fr_auto] gap-2"
+    >
+        <input
+            name="link"
+            type="text"
+            placeholder="Присоединиться по ссылке: https://t.me/+abcDEF…  /  @username"
+            class="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-mono focus:border-accent-500 focus:outline-none"
+        />
+        <button class="rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2 text-sm inline-flex items-center justify-center gap-2">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> Войти в чат
+        </button>
+    </form>
+
+    <!-- Filter bar (search lives here too so it's grouped with the rest of the filters) -->
+    <div id="filter-form" class="space-y-2">
+        <div class="flex items-center gap-2 flex-wrap">
+            <input
+                name="q"
+                type="search"
+                placeholder="Поиск по названию…"
+                value="{{ query }}"
+                x-model.debounce.200ms="query"
+                class="flex-1 min-w-[220px] rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none"
+                hx-get="/chats/fragment"
+                hx-trigger="input changed delay:200ms, keyup[key=='Enter']"
+                hx-target="#chats-grid"
+                hx-include="#filter-form"
+            />
+            <button
+                type="button"
+                x-show="activeType !== 'all' || activeFolder !== null || activeRecency !== null || activeMinMessages !== null || activeSync !== 'all' || query !== ''"
+                x-cloak
+                @click="resetFilters()"
+                class="inline-flex items-center gap-1 rounded-full bg-slate-800 hover:bg-rose-600/30 hover:text-rose-200 border border-slate-700 hover:border-rose-500/40 px-3 py-1 text-xs text-slate-300 transition"
+                title="Сбросить все фильтры"
+            >
+                <i data-lucide="x" class="w-3 h-3"></i>
+                Сбросить фильтры
+            </button>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-500 uppercase tracking-wider">Тип</span>
+            {% set types = [
+                ('all', 'Все'), ('private', 'Личные'), ('bot', 'Боты'),
+                ('group', 'Группы'), ('supergroup', 'Супергруппы'),
+                ('channel', 'Каналы'), ('public', 'Публичные')
+            ] %}
+            {% for value, label in types %}
+            <button
+                type="button"
+                name="type"
+                value="{{ value }}"
+                hx-get="/chats/fragment"
+                hx-include="#filter-form"
+                hx-vals='{"type": "{{ value }}"}'
+                hx-target="#chats-grid"
+                @click="activeType = '{{ value }}'"
+                :class="activeType === '{{ value }}' ? 'bg-accent-600 text-white border-accent-500' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'"
+                class="rounded-full px-3 py-1 text-xs border transition"
+            >
+                {{ label }}
+            </button>
+            {% endfor %}
+            <input type="hidden" name="type" :value="activeType" />
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-500 uppercase tracking-wider">Активность</span>
+            {% set recencies = [(0, 'Все время'), (1, '1 год'), (2, '2 года'), (3, '3 года')] %}
+            {% for value, label in recencies %}
+            <button
+                type="button"
+                hx-get="/chats/fragment"
+                hx-include="#filter-form"
+                hx-vals='{"recency": {{ value if value > 0 else "null" }}}'
+                hx-target="#chats-grid"
+                @click="activeRecency = {{ value or 'null' }}"
+                :class="activeRecency === {{ value or 'null' }} ? 'bg-accent-600 text-white border-accent-500' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'"
+                class="rounded-full px-3 py-1 text-xs border transition"
+            >
+                {{ label }}
+            </button>
+            {% endfor %}
+            <input type="hidden" name="recency" :value="activeRecency ?? ''" />
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-500 uppercase tracking-wider">Объём</span>
+            {% set volumes = [(0, 'Любой'), (10, '10+'), (100, '100+'), (1000, '1000+'), (10000, '10000+')] %}
+            {% for value, label in volumes %}
+            <button
+                type="button"
+                hx-get="/chats/fragment"
+                hx-include="#filter-form"
+                hx-vals='{"min_messages": {{ value if value > 0 else "null" }}}'
+                hx-target="#chats-grid"
+                @click="activeMinMessages = {{ value or 'null' }}"
+                :class="activeMinMessages === {{ value or 'null' }} ? 'bg-accent-600 text-white border-accent-500' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'"
+                class="rounded-full px-3 py-1 text-xs border transition"
+                title="{% if value == 0 %}Все чаты{% else %}Чаты с приближённым числом сообщений ≥ {{ value }}{% endif %}"
+            >
+                {{ label }}
+            </button>
+            {% endfor %}
+            <input type="hidden" name="min_messages" :value="activeMinMessages ?? ''" />
+        </div>
+
+        {# Sync-state filter row — slices the chat universe by where it
+           sits in the export lifecycle. Counts are computed against
+           the UNFILTERED set in the route so badge numbers don't
+           dip to zero when the user narrows by type/folder/search. #}
+        <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-500 uppercase tracking-wider">Синхронизация</span>
+            {% set sync_pills = [
+                ('all',     'Все',                'text-slate-200'),
+                ('synced',  'Синхронизированы',   'text-emerald-300'),
+                ('stale',   'С новыми',           'text-amber-300'),
+                ('syncing', 'Идёт сейчас',        'text-slate-200'),
+                ('never',   'Не экспортировались', 'text-slate-400'),
+            ] %}
+            {% for value, label, text_cls in sync_pills %}
+            <button
+                type="button"
+                hx-get="/chats/fragment"
+                hx-include="#filter-form"
+                hx-vals='{"sync": "{{ value }}"}'
+                hx-target="#chats-grid"
+                @click="activeSync = '{{ value }}'"
+                :class="activeSync === '{{ value }}' ? 'bg-accent-600 text-white border-accent-500' : 'bg-slate-800 hover:bg-slate-700 {{ text_cls }} border-slate-700'"
+                class="rounded-full px-3 py-1 text-xs border transition inline-flex items-center gap-1.5"
+                title="{% if value == 'syncing' %}Чаты с активной задачей синхронизации прямо сейчас{% elif value == 'stale' %}Экспортировались, но в Telegram появились новые сообщения{% elif value == 'synced' %}Экспортировались и обновлений нет{% elif value == 'never' %}Ещё ни разу не экспортировались{% else %}Все чаты{% endif %}"
+            >
+                {{ label }}
+                {# id="sync-count-<slug>" so the fragment swap can hot-update
+                   each badge via hx-swap-oob — otherwise after a sync the
+                   pill count stays at its initial-render value and the
+                   user sees "С новыми 1" while the filtered grid is empty. #}
+                <span id="sync-count-{{ value }}" class="opacity-70 text-[10px]">{{ sync_counts.get(value, 0) }}</span>
+            </button>
+            {% endfor %}
+            <input type="hidden" name="sync" :value="activeSync" />
+        </div>
+
+        {% if folders %}
+        <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-500 uppercase tracking-wider">Папки TG</span>
+            <button
+                type="button"
+                hx-get="/chats/fragment"
+                hx-include="#filter-form"
+                hx-vals='{"folder": null}'
+                hx-target="#chats-grid"
+                @click="activeFolder = null"
+                :class="activeFolder === null ? 'bg-accent-600 text-white border-accent-500' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'"
+                class="rounded-full px-3 py-1 text-xs border transition"
+            >
+                Любая
+            </button>
+            {% for f in folders %}
+            <button
+                type="button"
+                hx-get="/chats/fragment"
+                hx-include="#filter-form"
+                hx-vals='{"folder": {{ f.id }}}'
+                hx-target="#chats-grid"
+                @click="activeFolder = {{ f.id }}"
+                :class="activeFolder === {{ f.id }} ? 'bg-accent-600 text-white border-accent-500' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'"
+                class="rounded-full px-3 py-1 text-xs border transition"
+            >
+                {{ f.title }} <span class="opacity-60">{{ f.chat_count }}</span>
+            </button>
+            {% endfor %}
+            <input type="hidden" name="folder" :value="activeFolder ?? ''" />
+        </div>
+        {% endif %}
+    </div>
+    </div><!-- /sticky header -->
+
+    <div
+        id="chats-grid"
+        class="rounded-2xl border border-slate-800 bg-slate-900/40 divide-y divide-slate-800"
+    >
+        {% include "_chats_fragment.html" %}
+    </div>
+</div>
+
+{% include "_export_modal.html" %}
+
+<script>
+function chatsPage() {
+    return {
+        selected: [],
+        total: {{ chats|length }},
+        activeType: '{{ active_type or "all" }}',
+        activeFolder: {{ active_folder if active_folder is not none else 'null' }},
+        activeRecency: {{ active_recency if active_recency is not none else 'null' }},
+        activeMinMessages: {{ active_min_messages if active_min_messages is not none else 'null' }},
+        activeSync: '{{ active_sync or "all" }}',
+        query: {{ (query or '')|tojson }},
+        init() {
+            this.$el.addEventListener('change', (e) => {
+                if (!e.target.matches('input[type=checkbox][data-chat-id]')) return;
+                const id = parseInt(e.target.dataset.chatId, 10);
+                if (e.target.checked) {
+                    if (!this.selected.includes(id)) this.selected.push(id);
+                } else {
+                    this.selected = this.selected.filter(x => x !== id);
+                }
+            });
+            document.body.addEventListener('htmx:afterSwap', (evt) => {
+                if (evt.detail.target.id === 'chats-grid') {
+                    const boxes = document.querySelectorAll('#chats-grid input[type=checkbox][data-chat-id]');
+                    this.total = boxes.length;
+                    // Re-tick checkboxes for ids still in `selected`, and
+                    // drop ids that aren't visible anymore so the modal
+                    // never sends a chat the user can no longer see.
+                    const visibleIds = new Set();
+                    boxes.forEach(b => {
+                        const id = parseInt(b.dataset.chatId, 10);
+                        if (Number.isNaN(id)) return;
+                        visibleIds.add(id);
+                        if (this.selected.includes(id)) b.checked = true;
+                    });
+                    this.selected = this.selected.filter(id => visibleIds.has(id));
+                }
+            });
+        },
+        resetFilters() {
+            this.activeType = 'all';
+            this.activeFolder = null;
+            this.activeRecency = null;
+            this.activeMinMessages = null;
+            this.activeSync = 'all';
+            this.query = '';
+            // Clear the search input value (x-model handles this when bound,
+            // but we make it explicit so the DOM value is cleared even if
+            // Alpine hasn't re-rendered yet) and trigger a fresh fragment GET
+            // with no filter params.
+            const inp = this.$el.querySelector('input[name="q"]');
+            if (inp) inp.value = '';
+            if (window.htmx) {
+                window.htmx.ajax('GET', '/chats/fragment', {
+                    target: '#chats-grid',
+                    swap: 'innerHTML',
+                });
+            }
+        },
+        selectAllVisible() {
+            // Tick every checkbox currently rendered in #chats-grid (which
+            // already reflects the active filter combination, since the
+            // server returned only matching chats). Updates the Alpine
+            // `selected` list in one go.
+            const boxes = document.querySelectorAll(
+                '#chats-grid input[type=checkbox][data-chat-id]'
+            );
+            const ids = [];
+            boxes.forEach(b => {
+                b.checked = true;
+                const id = parseInt(b.dataset.chatId, 10);
+                if (!Number.isNaN(id)) ids.push(id);
+            });
+            this.selected = ids;
+        },
+        deselectAll() {
+            const boxes = document.querySelectorAll(
+                '#chats-grid input[type=checkbox][data-chat-id]'
+            );
+            boxes.forEach(b => { b.checked = false; });
+            this.selected = [];
+        },
+    };
+}
+
+/* ── Chat transcript opener ──
+   Used by row double-click + the explicit "Открыть" button. We give
+   each chat its own unique window name (instead of "_blank") because
+   Chrome will silently reuse an existing tab whose name matches across
+   consecutive ``window.open`` calls, which made the second double-click
+   a no-op when the user already had a different chat editor open.
+
+   IMPORTANT: do NOT pass ``noopener`` in the features string — per the
+   HTML spec, ``window.open(url, name, 'noopener')`` returns ``null``
+   because the opener relationship is severed (the caller can no longer
+   reach the opened Window object). With the noopener flag we were
+   tripping the popup-blocker fallback on EVERY click, hijacking the
+   current tab into ``/history/{id}/view`` — and when that chat hadn't
+   been exported yet, ``_install_friendly_error_handlers`` in main.py
+   chained 404 → parent path → ... → ``/``, landing the user on the
+   main menu instead of the transcript. Same-origin opener leak is
+   trivial (we control both pages), so drop noopener and keep the
+   correct popup-blocker detection. */
+function openChatTranscript(chatId, ev) {
+    if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+    if (!chatId) return;
+    const url = '/history/' + encodeURIComponent(chatId) + '/view';
+    const name = 'tge_chat_' + chatId + '_' + Date.now();
+    let win = null;
+    try {
+        win = window.open(url, name);
+    } catch (_e) {
+        win = null;
+    }
+    if (!win) {
+        // Popup blocker really did fire — fall back to navigating the
+        // current tab so the user still gets there.
+        window.location.href = url;
+    }
+}
+
+/* ── Quick sync handlers ──
+   POST /chats/{id}/sync kicks off a job and returns its id. Instead
+   of redirecting to /jobs/{id} (the user can still navigate there
+   manually — the job is right on the /jobs list), we swap the
+   button in-place for a "⟳ Идёт N%" pill and start polling
+   /chats/{id}/sync-status every 2 s to keep the percent fresh.
+   When the job becomes terminal (succeeded / failed / cancelled),
+   we reload /chats so the row's stale-vs-fresh state reflects the
+   new ``last_export_at`` from the DB. Errors land in a
+   window.alert — the route returns a JSON {detail: "..."} body. */
+async function syncOneChat(btn, chatId) {
+    if (!chatId) return;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="animate-spin">⟳</span> Запускаю…';
+    try {
+        const r = await fetch(`/chats/${chatId}/sync`, { method: 'POST' });
+        if (!r.ok) {
+            const data = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+            alert(`Не удалось запустить синхронизацию (${r.status}):\n${data.detail || JSON.stringify(data)}`);
+            btn.disabled = false;
+            btn.innerHTML = orig;
+            return;
+        }
+        const body = await r.json();
+        // Swap the "Синхр." button for the same "⟳ Идёт N%" pill the
+        // server-side render uses, so the visual treatment is identical
+        // whether the user clicked the button just now or opened /chats
+        // mid-sync from another tab.
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.disabled = true;
+        pill.className = 'shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium bg-slate-700 text-slate-300 cursor-wait opacity-80';
+        pill.title = 'Синхронизация идёт — следи на странице /jobs или подожди здесь';
+        pill.dataset.syncingChatId = String(chatId);
+        pill.dataset.syncJobId = body.job_id || '';
+        pill.innerHTML = '<span class="animate-spin">⟳</span> Идёт <span class="sync-percent" data-sync-percent>0%</span>';
+        btn.replaceWith(pill);
+        startSyncPoller(pill);
+    } catch (e) {
+        alert('Сеть/JS-ошибка при запуске синхронизации: ' + e);
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
+
+/* Single source of truth for live-syncing pills. We track every pill
+   in a Set so polling intervals don't pile up if the user clicks
+   Sync twice — and so opening /chats with an already-running job
+   auto-starts the poller too. */
+const _syncPollers = new WeakSet();
+
+function startSyncPoller(pill) {
+    if (_syncPollers.has(pill)) return;
+    _syncPollers.add(pill);
+    const chatId = pill.dataset.syncingChatId;
+    if (!chatId) return;
+    const percentSpan = pill.querySelector('[data-sync-percent]');
+    let consecutiveErrors = 0;
+
+    async function tick() {
+        // If the pill was removed from the DOM (page navigated /
+        // HTMX swap), bail.
+        if (!pill.isConnected) return;
+        try {
+            const r = await fetch(`/chats/${chatId}/sync-status`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const st = await r.json();
+            consecutiveErrors = 0;
+            if (percentSpan) {
+                const p = (st.percent || 0).toFixed(0);
+                const cur = st.current || 0;
+                const tot = st.total || 0;
+                percentSpan.textContent = `${p}%`;
+                pill.title = (tot
+                    ? `Синхронизация: ${cur}/${tot} файлов (${p}%) — статус ${st.status}`
+                    : `Синхронизация: ${p}% — статус ${st.status}`);
+            }
+            if (!st.in_progress) {
+                // Job hit a terminal state. Reload /chats so the
+                // row reflects the new last_export_at — fresh chats
+                // get the faded "Синхр." back, anything that failed
+                // stays amber.
+                window.location.reload();
+                return;
+            }
+        } catch (_e) {
+            consecutiveErrors++;
+            if (consecutiveErrors >= 5) {
+                // Server probably restarted or we're offline — stop
+                // hammering and let the user reload manually.
+                if (percentSpan) percentSpan.textContent = '?';
+                pill.title = 'Сервер недоступен — обнови страницу';
+                return;
+            }
+        }
+        // Adaptive interval — frequent while the job is busy, less
+        // so if percent has stabilised. Keep it simple for now.
+        setTimeout(tick, 2000);
+    }
+    setTimeout(tick, 1500);
+}
+
+/* On every /chats load AND after every HTMX fragment swap, kick a
+   poller for every visible "Идёт N%" pill. This way, opening
+   /chats in a fresh tab while a sync is already running picks up
+   the live tracking automatically — no need for the user to have
+   clicked the button in this tab. */
+function _bootstrapSyncPollers(root) {
+    (root || document).querySelectorAll('[data-syncing-chat-id]').forEach(startSyncPoller);
+}
+document.addEventListener('DOMContentLoaded', () => _bootstrapSyncPollers());
+document.body.addEventListener('htmx:afterSwap', (e) => _bootstrapSyncPollers(e.target));
+
+async function syncAllStale(btn) {
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="animate-spin">⟳</span> Запускаю…';
+    try {
+        const r = await fetch('/chats/sync-stale', { method: 'POST' });
+        if (r.status === 204) {
+            alert('Устаревших чатов нет — всё уже синхронизировано.');
+            return;
+        }
+        if (r.ok) {
+            const body = await r.json();
+            // Backend now spawns one job per stale chat — redirect to the
+            // list page where the user can see every row with its own
+            // title and progress bar, instead of a single mega-job's
+            // detail page.
+            const count = body.count ?? (body.job_ids ? body.job_ids.length : 0);
+            const failed = (body.failures || []).length;
+            if (failed) {
+                alert(`Запущено задач: ${count}. Не удалось создать: ${failed}. Смотри /jobs.`);
+            }
+            window.location.href = '/jobs?status=active';
+            return;
+        }
+        const data = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+        alert(`Не удалось запустить синхронизацию (${r.status}):\n${data.detail || JSON.stringify(data)}`);
+    } catch (e) {
+        alert('Сеть/JS-ошибка: ' + e);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
+
+/* ── Per-chat local delete ──
+   Two-step confirm: first prompt names the chat + spells out the
+   damage in MiB / file count so the user can't fat-finger it.
+   POST /chats/{id}/delete wipes the DB row (cascades to ChatState
+   + ExportJob inside the route) and removes the export folder
+   from disk. ``media_pool`` is preserved — those files are
+   content-addressed dedup hardlinks that other chats may use. On
+   success we drop the row from the DOM so /chats reflects the
+   delete without a full reload; counts in the filter pills are
+   stale until the user navigates or HTMX-refetches the fragment. */
+async function deleteChatLocal(chatId, btn) {
+    const title = btn.dataset.chatTitle || ('chat ' + chatId);
+    const hasExport = btn.dataset.hasExport === '1';
+    const files = parseInt(btn.dataset.files || '0', 10);
+    const bytes = parseInt(btn.dataset.bytes || '0', 10);
+    const mib = (bytes / 1048576).toFixed(1);
+    const partsDmg = [];
+    if (hasExport) partsDmg.push(`папка экспорта (${files} файлов, ${mib} MiB)`);
+    partsDmg.push('история задач и watermark из БД');
+    const dmg = partsDmg.join(', ');
+    const msg =
+        `Удалить чат «${title}» локально?\n\n` +
+        `Будет стёрто: ${dmg}.\n` +
+        'Сам Telegram-диалог НЕ трогаем — чат вернётся в список ' +
+        'после "Обновить чаты" из Telegram.\n\n' +
+        'Это действие НЕ откатывается.';
+    if (!confirm(msg)) return;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="animate-spin">⟳</span>';
+    try {
+        const r = await fetch(`/chats/${chatId}/delete`, { method: 'POST' });
+        if (!r.ok) {
+            const data = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+            alert(`Не удалось удалить (${r.status}):\n${data.detail || JSON.stringify(data)}`);
+            btn.disabled = false;
+            btn.innerHTML = orig;
+            return;
+        }
+        const body = await r.json();
+        // Drop the row from the DOM. Find the closest <li> ancestor
+        // — every chat row is wrapped in one in the fragment template.
+        const row = btn.closest('li');
+        if (row) {
+            row.remove();
+        } else {
+            // Fallback — should never happen but reload guarantees a
+            // consistent visual state if the wrapper changed.
+            window.location.reload();
+            return;
+        }
+        // Quick toast-like confirmation. Could be fancier but a
+        // window.alert here is cheap and works without DOM hooks.
+        const freed = body.removed_files
+            ? ` (освобождено ${(body.freed_bytes / 1048576).toFixed(1)} MiB)`
+            : '';
+        console.log(`deleted chat ${chatId} «${body.title}»${freed}`);
+    } catch (e) {
+        alert('Сеть/JS-ошибка: ' + e);
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
+
+async function toggleAutoUpdate(btn, chatId) {
+    if (!chatId) return;
+    const currentOn = btn.dataset.on === 'true';
+    const desired = !currentOn;
+    btn.disabled = true;
+    try {
+        const r = await fetch(`/chats/${chatId}/auto-update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: desired }),
+        });
+        if (!r.ok) {
+            const data = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+            alert(`Не удалось изменить авто-обновление (${r.status}):\n${data.detail || JSON.stringify(data)}`);
+            return;
+        }
+        const body = await r.json();
+        const newOn = body.auto_update;
+        btn.dataset.on = String(newOn);
+        // Update visual state to match new value.
+        if (newOn) {
+            btn.className = 'shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition bg-emerald-700 hover:bg-emerald-600 text-emerald-50';
+            btn.title = 'Авто-обновление: вкл — нажмите, чтобы выключить';
+        } else {
+            btn.className = 'shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition bg-slate-800 hover:bg-slate-700 text-slate-300 opacity-70 hover:opacity-100';
+            btn.title = 'Авто-обновление: выкл — нажмите, чтобы включить';
+        }
+        if (window.lucide && window.lucide.createIcons) lucide.createIcons();
+    } catch (e) {
+        alert('Сеть/JS-ошибка при переключении авто-обновления: ' + e);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+</script>
+{% endblock %}

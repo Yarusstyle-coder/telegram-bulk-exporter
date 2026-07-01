@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-lg">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+        <div class="flex items-center gap-3 mb-4">
+            <i data-lucide="key-round" class="w-6 h-6 text-accent-400"></i>
+            <h1 class="text-2xl font-semibold">Шаг 3. Резервные коды</h1>
+        </div>
+        <p class="text-sm text-slate-400 mb-4">
+            Сохраните коды в надёжном месте (менеджер паролей, офлайн-блокнот). Каждый код работает
+            один раз и пригодится, если потеряете доступ к TOTP.
+        </p>
+
+        <div class="grid grid-cols-2 gap-2 mb-6 font-mono text-sm">
+            {% for c in codes %}
+            <div class="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-center text-accent-200 tracking-wider">
+                {{ c }}
+            </div>
+            {% endfor %}
+        </div>
+
+        <form method="post" action="/setup/backup-codes/confirm" class="space-y-4">
+            <label class="flex items-start gap-2 text-sm text-slate-300">
+                <input type="checkbox" name="saved" value="on" required
+                       class="mt-1 rounded border-slate-700 bg-slate-950 text-accent-500 focus:ring-accent-500" />
+                <span>Я сохранил(а) коды в надёжном месте.</span>
+            </label>
+            <button type="submit"
+                    class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 font-medium transition">
+                Завершить настройку
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HTML Chat Editor</title>
+  <style>
+    :root {
+      --bg:      #0f1117;
+      --surf:    #1c1e26;
+      --surf2:   #252836;
+      --border:  #2e3245;
+      --accent:  #4f8ef7;
+      --green:   #43b581;
+      --red:     #e05555;
+      --yellow:  #f0b429;
+      --purple:  #9b7fe8;
+      --text:    #e0e0e0;
+      --muted:   #6b7280;
+      --radius:  8px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);
+         font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+         font-size:14px;min-height:100vh}
+
+    /* ── DROP ZONE ── */
+    #dz{display:flex;flex-direction:column;align-items:center;
+        justify-content:center;min-height:100vh;padding:40px;text-align:center;gap:16px}
+    #dz.over{background:#141b2d}
+    .drop-box{border:2px dashed var(--accent);border-radius:16px;padding:60px 80px;
+              cursor:pointer;transition:all .2s;max-width:520px;width:100%}
+    .drop-box:hover,#dz.over .drop-box{border-color:#7ab3ff;background:#14192e}
+    .drop-icon{font-size:52px;margin-bottom:14px}
+    .drop-title{font-size:20px;font-weight:600;margin-bottom:6px}
+    .drop-sub{color:var(--muted);font-size:13px}
+    #fi{display:none}
+
+    /* ── APP ── */
+    #app{display:none;flex-direction:column;height:100vh}
+
+    /* ── TOOLBAR ── */
+    #tb{background:var(--surf);border-bottom:1px solid var(--border);
+        padding:8px 14px;display:flex;align-items:center;gap:7px;
+        flex-wrap:wrap;position:sticky;top:0;z-index:100;
+        box-shadow:0 2px 8px rgba(0,0,0,.4)}
+    .tb-sep{width:1px;height:20px;background:var(--border);flex-shrink:0}
+    .flabel{font-size:11px;color:var(--muted);text-transform:uppercase;
+            letter-spacing:.5px;white-space:nowrap}
+    .sp{flex:1;min-width:4px}
+    .fname{color:var(--muted);font-size:12px;max-width:200px;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .statbar{color:var(--muted);font-size:12px;white-space:nowrap}
+
+    .btn{padding:5px 11px;border-radius:6px;border:1px solid var(--border);
+         background:var(--surf2);color:var(--text);cursor:pointer;
+         font-size:12px;font-family:inherit;transition:all .15s;white-space:nowrap}
+    .btn:hover{border-color:#555;background:#2e3347}
+    .btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+    .btn.save{background:var(--green);border-color:var(--green);
+              color:#fff;font-weight:600}
+    .btn.save:hover{background:#37a06e}
+    .btn.danger{background:#3a1818;border-color:var(--red);color:#f98}
+    .btn.danger:hover{background:#5a2020}
+
+    /* progress bar */
+    #prog{height:2px;background:var(--accent);width:0;
+          transition:width .3s;position:sticky;top:48px;z-index:99;flex-shrink:0}
+
+    /* ── MESSAGE LIST ── */
+    #msgs{flex:1;overflow-y:auto;padding:10px 14px;
+          display:flex;flex-direction:column;gap:6px}
+    #msgs::-webkit-scrollbar{width:6px}
+    #msgs::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+    /* ── CARD ── */
+    .card{background:var(--surf);border:1px solid var(--border);
+          border-radius:var(--radius);padding:9px 12px;
+          transition:opacity .2s,border-color .2s}
+    /* Date separator */
+    .card.svc{background:transparent;border:1px solid #2a2f45;
+              text-align:center;color:var(--muted);font-size:12px;padding:5px 14px;
+              align-self:center;border-radius:20px;margin:4px auto}
+    .card.del{opacity:.35;border-color:var(--red)!important}
+    .card.del .cbody{text-decoration:line-through}
+    .card.hid{display:none}
+
+    /* ── BUBBLE LAYOUT (2-participant chat) ── */
+    .card.p1{
+      align-self:flex-start;
+      max-width:76%;
+      background:var(--surf2);
+      border-radius:4px 12px 12px 12px;
+    }
+    .card.p2{
+      align-self:flex-end;
+      max-width:76%;
+      background:#162b1e;
+      border-color:#2a5a3a;
+      border-radius:12px 4px 12px 12px;
+    }
+    .card.p1 .sender{color:#7ab3ff}
+    .card.p2 .sender{color:var(--green)}
+
+    /* card header */
+    .ch{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+    .badge{padding:2px 7px;border-radius:20px;font-size:10px;
+           font-weight:700;letter-spacing:.4px;text-transform:uppercase;flex-shrink:0}
+    .bt{background:#1d2d3a;color:#6ab}
+    .bv{background:#1d3a2d;color:#5d9}
+    .bvid{background:#2d2040;color:var(--purple)}
+    .bm{background:#3a2d18;color:var(--yellow)}
+    .bf{background:#3a2020;color:#f98}
+    .bl{background:#182038;color:#7af}
+    .sender{font-weight:600;font-size:13px;color:#bdd}
+    .ts{color:var(--muted);font-size:11px;margin-left:auto;flex-shrink:0}
+
+    /* card body */
+    .cbody{margin-bottom:7px}
+    .ptxt{color:#ccc;line-height:1.55;word-break:break-word;
+          white-space:pre-wrap;font-size:13px}
+    .ptxt a{color:var(--accent);word-break:break-all}
+
+    /* forwarded block */
+    .fwd-block{border-left:3px solid #f98;padding-left:9px;
+               margin-top:5px;font-size:12px;color:#dbb}
+    .fwd-from{color:#f98;font-weight:600;margin-bottom:3px;font-size:11px}
+
+    /* transcription */
+    .tr-block{border-left:3px solid var(--purple);padding-left:10px;margin-top:6px}
+    .tr-meta{font-size:11px;color:var(--muted);margin-bottom:3px}
+    .tr-text{color:#c8b8e8;font-style:italic;line-height:1.55;
+             font-size:13px;word-break:break-word;white-space:pre-wrap}
+
+    /* media */
+    .media-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px;align-items:flex-start}
+    .mi-photo{max-width:220px;max-height:220px;border-radius:6px;
+              cursor:pointer;display:block;object-fit:cover}
+    .mi-photo:hover{opacity:.85}
+    .mi-video{max-width:280px;max-height:180px;border-radius:6px;display:block}
+    .mi-video-round{width:160px;height:160px;border-radius:50%;object-fit:cover;display:block}
+    .mi-sticker{color:var(--muted);font-size:12px;font-style:italic;
+                padding:4px 8px;border:1px dashed var(--border);border-radius:4px}
+
+    /* video wrapper with speed controls */
+    .vid-wrap{display:inline-flex;flex-direction:column;gap:4px}
+    .vid-spd-row{display:flex;gap:3px;flex-wrap:wrap}
+
+    /* ── Custom audio player ── */
+    .ap{display:flex;align-items:flex-start;gap:8px;
+        background:#131825;border:1px solid var(--border);
+        border-radius:12px;padding:8px 14px 8px 8px;
+        max-width:340px;min-width:240px;user-select:none}
+    .ap-play{width:32px;height:32px;border-radius:50%;border:none;
+             background:var(--green);color:#fff;cursor:pointer;
+             font-size:13px;flex-shrink:0;display:flex;
+             align-items:center;justify-content:center;
+             transition:background .15s;padding:0;margin-top:2px}
+    .ap-play:hover{background:#37a06e}
+    .ap.playing .ap-play{background:var(--accent)}
+    .ap-center{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+    .ap-lbl{font-size:10px;color:var(--muted);
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ap-track{height:4px;background:var(--border);border-radius:2px;
+              cursor:pointer;position:relative}
+    .ap-fill{height:100%;background:var(--green);border-radius:2px;
+             width:0;pointer-events:none;transition:width .08s linear}
+    .ap.playing .ap-fill{background:var(--accent)}
+    .ap-time{font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0;
+             min-width:36px;text-align:right;padding-top:2px}
+
+    /* Speed buttons (shared audio + video) */
+    .spd-row{display:flex;gap:3px;margin-top:2px;flex-wrap:wrap}
+    .spd-btn{padding:1px 5px;font-size:10px;border-radius:3px;
+             border:1px solid var(--border);background:transparent;
+             color:var(--muted);cursor:pointer;font-family:inherit;
+             transition:all .12s;line-height:1.4}
+    .spd-btn:hover{color:var(--text);border-color:#555}
+    .spd-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+    /* controls */
+    .cctrl{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:5px}
+    .cb{padding:3px 9px;font-size:11px;border-radius:4px;
+        border:1px solid var(--border);background:transparent;
+        color:var(--muted);cursor:pointer;font-family:inherit;transition:all .15s}
+    .cb:hover{color:var(--text);border-color:#555}
+    .cb.cdel:hover{color:var(--red);border-color:var(--red)}
+    .cb.cres{color:var(--yellow);border-color:var(--yellow)}
+    .cb.cres:hover{background:var(--yellow);color:#000}
+    .cb.cedit:hover{color:var(--purple);border-color:var(--purple)}
+    .cb.csave{color:var(--green);border-color:var(--green)}
+    .cb.csave:hover{background:var(--green);color:#fff}
+    .cb.ccancel:hover{color:var(--red);border-color:var(--red)}
+    .cb.creset{color:var(--accent);border-color:var(--accent)}
+    .cb.creset:hover{background:var(--accent);color:#fff}
+
+    /* inline edit */
+    .ef{margin-top:8px;display:flex;flex-direction:column;gap:5px}
+    .ef textarea{width:100%;min-height:80px;background:#080a10;color:var(--text);
+                 border:1px solid var(--purple);border-radius:6px;padding:8px;
+                 font-family:inherit;font-size:13px;line-height:1.5;
+                 resize:vertical;outline:none}
+    .ef textarea:focus{border-color:var(--accent)}
+    .efbtns{display:flex;gap:6px}
+
+    /* ── UNDO PANEL ── */
+    #up{position:fixed;bottom:18px;right:18px;
+        display:flex;flex-direction:column;gap:7px;z-index:300;max-width:340px}
+    .toast{background:var(--surf2);border:1px solid var(--yellow);
+           border-radius:8px;padding:9px 12px;
+           display:flex;align-items:center;gap:8px;
+           box-shadow:0 4px 20px rgba(0,0,0,.6);animation:si .2s ease}
+    .toast-txt{flex:1;font-size:12px;color:var(--text);line-height:1.4}
+    @keyframes si{from{transform:translateX(110%);opacity:0}to{transform:none;opacity:1}}
+
+    .empty{text-align:center;color:var(--muted);padding:60px 20px}
+  </style>
+</head>
+<body>
+
+<!-- DROP ZONE -->
+<div id="dz">
+  <div class="drop-box" id="dbox">
+    <div class="drop-icon">📂</div>
+    <div class="drop-title">Перетащите HTML-файл сюда</div>
+    <div class="drop-sub">или нажмите для выбора файла</div>
+    <input type="file" id="fi" accept=".html,.htm">
+  </div>
+  <div class="drop-sub" style="margin-top:8px">Telegram Chat HTML Editor — поддержка транскрипций</div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div id="tb">
+    <span style="font-size:15px">📝</span>
+    <span class="fname" id="fname"></span>
+    <div class="tb-sep"></div>
+    <span class="flabel">Тип:</span>
+    <button class="btn on" id="ba" onclick="setF(null)">Все</button>
+    <button class="btn"    id="bm" onclick="setF('media')">🎬 Медиа</button>
+    <button class="btn"    id="bl" onclick="setF('links')">🔗 Ссылки</button>
+    <button class="btn"    id="bf" onclick="setF('fwd')">↪️ Пересланные</button>
+    <!-- Participant filter (populated dynamically) -->
+    <div class="tb-sep" id="pfsep" style="display:none"></div>
+    <span class="flabel" id="pflabel" style="display:none">Участник:</span>
+    <div id="pf-area" style="display:flex;gap:7px;flex-wrap:wrap"></div>
+    <div class="sp"></div>
+    <span class="statbar" id="stat"></span>
+    <div class="tb-sep"></div>
+    <button class="btn danger" id="bdelfwd" onclick="delAllFwd()" style="display:none"
+            title="Пометить все пересланные на удаление">🗑 Все пересланные</button>
+    <button class="btn" onclick="reload2()">↺ Файл</button>
+    <button class="btn save" onclick="saveHTML()">💾 Сохранить HTML</button>
+  </div>
+  <div id="prog"></div>
+  <div id="msgs"></div>
+</div>
+
+<div id="up"></div>
+
+<script>
+'use strict';
+
+/* ════════════════════════════════════════════
+   STATE
+════════════════════════════════════════════ */
+let origDoc  = null;
+let msgs     = [];
+let delIds   = new Set();
+let curF     = null;
+let curNameF = null;        // name filter (null = all)
+let participants = [];      // unique sender names detected
+let origName = 'edited_chat.html';
+let activeEditorClose = null;
+
+/* ════════════════════════════════════════════
+   FILE LOADING
+════════════════════════════════════════════ */
+const dz   = document.getElementById('dz');
+const dbox = document.getElementById('dbox');
+const fi   = document.getElementById('fi');
+
+dbox.onclick = () => fi.click();
+fi.onchange  = e => { if (e.target.files[0]) load(e.target.files[0]); };
+
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f) load(f);
+});
+
+function load(file) {
+  origName = 'edited_' + file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    origDoc = new DOMParser().parseFromString(e.target.result, 'text/html');
+    delIds.clear(); curF = null; curNameF = null;
+    msgs = parseMsgs(origDoc);
+    detectParticipants();   // must be before renderAll so p1/p2 classes are correct
+    document.getElementById('fname').textContent = file.name;
+    dz.style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    setF(null, true);
+    renderAll();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+/* ── Auto-load via ?src=<URL> query param ──
+   When the editor is opened by the FastAPI server with ?src=...messages.html,
+   skip the drag-and-drop step and fetch the chat HTML directly. */
+(function autoLoadFromQuery() {
+  const params = new URLSearchParams(location.search);
+  const srcUrl = params.get('src');
+  if (!srcUrl) return;
+  const titleHint = params.get('title') || '';
+  const fileName = decodeURIComponent(srcUrl.split('/').pop() || 'messages.html');
+  fetch(srcUrl)
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    })
+    .then(htmlText => {
+      origName = 'edited_' + fileName;
+      origDoc = new DOMParser().parseFromString(htmlText, 'text/html');
+      // The editor reads URLs via getAttribute() (raw strings) and sets them
+      // on freshly-created elements at the editor's own URL — so a <base>
+      // tag wouldn't help. Walk origDoc and rewrite every relative
+      // href/src/poster/data-src to an absolute URL anchored at srcUrl.
+      const baseHref = new URL(srcUrl, location.href).href;
+      const ATTRS = ['href', 'src', 'poster', 'data-src'];
+      origDoc.querySelectorAll('*').forEach(node => {
+        for (const a of ATTRS) {
+          if (!node.hasAttribute(a)) continue;
+          const v = node.getAttribute(a);
+          if (!v || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:|blob:|javascript:)/i.test(v)) continue;
+          try { node.setAttribute(a, new URL(v, baseHref).href); } catch (_) {}
+        }
+      });
+
+      delIds.clear(); curF = null; curNameF = null;
+      msgs = parseMsgs(origDoc);
+      detectParticipants();
+      const fnameEl = document.getElementById('fname');
+      if (fnameEl) fnameEl.textContent = titleHint || fileName;
+      dz.style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      setF(null, true);
+      renderAll();
+    })
+    .catch(err => {
+      console.error('autoLoadFromQuery failed', err);
+      const dboxEl = document.getElementById('dbox');
+      if (dboxEl) {
+        dboxEl.innerHTML =
+          '<div style="color:#c66">Не удалось загрузить ' +
+          srcUrl.replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])) +
+          '<br>' + (err && err.message ? err.message : err) + '</div>';
+      }
+    });
+})();
+
+function reload2() {
+  if (delIds.size && !confirm('Несохранённые удаления будут потеряны. Продолжить?')) return;
+  document.getElementById('app').style.display = 'none';
+  dz.style.display = '';
+  fi.value = '';
+  participants = [];
+  curNameF = null;
+}
+
+/* ════════════════════════════════════════════
+   PARSE
+════════════════════════════════════════════ */
+let _autoId = 0;
+
+function parseMsgs(doc) {
+  _autoId = 0;
+  const hists = doc.querySelectorAll('.history');
+  const list  = hists.length > 0
+    ? Array.from(hists).flatMap(h => Array.from(h.querySelectorAll(':scope > .message')))
+    : Array.from(doc.querySelectorAll('.message'));
+
+  return list.map(el => {
+    // Ensure every element has a unique ID (fallback for missing ids)
+    if (!el.id) {
+      el.id = 'auto-msg-' + (_autoId++);
+    }
+
+    const isSvc  = el.classList.contains('service');
+    const name   = el.querySelector('.from_name')?.textContent?.trim() || '';
+    const dateEl = el.querySelector('.date.details');
+    const time   = dateEl?.getAttribute('title') || dateEl?.textContent?.trim() || '';
+
+    // Transcription
+    const trEl    = el.querySelector('.text.transcribed-voice,.text.transcribed-video') ||
+                    [...el.querySelectorAll('.text')].find(t => /transcribed/i.test(t.className));
+    const transEl = trEl?.querySelector('.transcription') || null;
+    const metaEl  = trEl?.querySelector('.voice-meta,.video-meta') || null;
+
+    const isFwd    = !!el.querySelector('.forwarded');
+    const hasLinks = !!el.querySelector('a[href^="http"]');
+    const hasMed   = !!el.querySelector('.media_wrap,.photo_wrap,.video_wrap,.audio_file_wrap');
+
+    const txtBlocks = [];
+    el.querySelectorAll('.body:not(.forwarded) > .text').forEach(t => {
+      if (/transcribed/i.test(t.className)) return;
+      const h = fixLinks(t).innerHTML.trim();
+      if (h) txtBlocks.push({ html: h, fwd: false, el: t });
+    });
+    el.querySelectorAll('.forwarded.body').forEach(fw => {
+      const from = fw.querySelector('.from_name')?.textContent?.trim() || '';
+      fw.querySelectorAll('.text').forEach(t => {
+        if (/transcribed/i.test(t.className)) return;
+        const h = fixLinks(t).innerHTML.trim();
+        if (h) txtBlocks.push({ html: h, fwd: true, from, el: t });
+      });
+    });
+
+    const media = extractMedia(el);
+
+    return {
+      id: el.id, element: el, isSvc, name, time,
+      isTr: !!trEl, trEl, transEl,
+      metaTxt:  metaEl?.textContent?.trim() || '',
+      transTxt: transEl?.textContent?.trim() || '',
+      isFwd, hasLinks, hasMed: hasMed || media.length > 0,
+      txtBlocks, media
+    };
+  });
+}
+
+function fixLinks(el) {
+  const c = el.cloneNode(true);
+  c.querySelectorAll('a[href^="http"]').forEach(a => {
+    a.target = '_blank'; a.rel = 'noopener noreferrer';
+  });
+  c.querySelectorAll('a:not([href^="http"])').forEach(a => {
+    const sp = document.createElement('span');
+    sp.style.color = 'var(--muted)';
+    sp.textContent = a.textContent;
+    a.replaceWith(sp);
+  });
+  return c;
+}
+
+/* ════════════════════════════════════════════
+   DETECT PARTICIPANTS
+════════════════════════════════════════════ */
+function detectParticipants() {
+  const seen = [];
+  for (const m of msgs) {
+    if (m.isSvc || !m.name) continue;
+    if (!seen.includes(m.name)) seen.push(m.name);
+  }
+  participants = seen;
+  buildNameFilterButtons();
+
+  // Show/hide "delete all forwarded" button
+  const hasFwd = msgs.some(m => m.isFwd && !m.isSvc);
+  document.getElementById('bdelfwd').style.display = hasFwd ? '' : 'none';
+}
+
+function buildNameFilterButtons() {
+  const area  = document.getElementById('pf-area');
+  const sep   = document.getElementById('pfsep');
+  const lbl   = document.getElementById('pflabel');
+  area.innerHTML = '';
+
+  if (participants.length === 0) {
+    sep.style.display = 'none';
+    lbl.style.display = 'none';
+    return;
+  }
+
+  sep.style.display = '';
+  lbl.style.display = '';
+
+  // "All participants" button
+  const allBtn = el('button', 'btn on');
+  allBtn.id = 'bpa';
+  allBtn.textContent = 'Все';
+  allBtn.onclick = () => setNameF(null);
+  area.appendChild(allBtn);
+
+  // One button per participant
+  participants.forEach((name, i) => {
+    const btn = el('button', 'btn');
+    btn.id = 'bp' + i;
+    btn.textContent = name;
+    btn.title = 'Показать только сообщения: ' + name;
+    btn.onclick = () => setNameF(name);
+    area.appendChild(btn);
+  });
+}
+
+function setNameF(name) {
+  curNameF = name;
+  // Update button states
+  document.getElementById('bpa')?.classList.toggle('on', name === null);
+  participants.forEach((n, i) => {
+    document.getElementById('bp' + i)?.classList.toggle('on', n === name);
+  });
+  applyF();
+  updateStat();
+}
+
+/* ════════════════════════════════════════════
+   MEDIA EXTRACTION
+════════════════════════════════════════════ */
+function extractMedia(el) {
+  const items = [];
+  const seen  = new WeakSet();
+  const add   = (type, data) => {
+    const a = data._a;
+    if (a) { if (seen.has(a)) return; seen.add(a); }
+    items.push({ type, ...data });
+  };
+
+  el.querySelectorAll('a.photo_wrap').forEach(a => {
+    const img = a.querySelector('img.photo, img');
+    add('photo', { thumb: img?.getAttribute('src'), full: a.getAttribute('href'), _a: a });
+  });
+
+  el.querySelectorAll('a.media_voice_message, a[href*="voice_messages/"]').forEach(a => {
+    const src = a.getAttribute('href');
+    const dur = a.querySelector('.status.details, .duration')?.textContent?.trim() || '';
+    if (src) add('audio', { src, label: dur || null, voice: true, _a: a });
+  });
+
+  el.querySelectorAll('a[href*="round_video_messages"]').forEach(a => {
+    const src = a.getAttribute('href');
+    const th  = a.querySelector('img.thumb, img');
+    if (src) add('video', { src, poster: th?.getAttribute('src'), round: true, _a: a });
+  });
+
+  el.querySelectorAll('a.video_file_wrap').forEach(a => {
+    const src = a.getAttribute('href');
+    const th  = a.querySelector('img.thumb, img');
+    if (src) add('video', { src, poster: th?.getAttribute('src'), round: false, _a: a });
+  });
+
+  el.querySelectorAll('a.media_photo').forEach(a => {
+    const href = a.getAttribute('href');
+    if (!href) return;
+    if (href.endsWith('.tgs')) {
+      add('sticker', { animated: true, label: a.querySelector('.title')?.textContent?.trim(), _a: a });
+    } else {
+      add('photo', { thumb: href, full: href, _a: a });
+    }
+  });
+
+  el.querySelectorAll('a.media_audio_file').forEach(a => {
+    const src = a.getAttribute('href');
+    const lbl = a.querySelector('.title')?.textContent?.trim();
+    if (src) add('audio', { src, label: lbl, _a: a });
+  });
+
+  el.querySelectorAll('a.media_file').forEach(a => {
+    const src = a.getAttribute('href');
+    const lbl = a.querySelector('.title')?.textContent?.trim() || src?.split('/').pop();
+    if (src) {
+      const ext = src.split('.').pop().toLowerCase();
+      if (['mp3','ogg','opus','m4a','flac','wav'].includes(ext)) {
+        add('audio', { src, label: lbl, _a: a });
+      } else if (['mp4','webm','mov'].includes(ext)) {
+        add('video', { src, round: false, _a: a });
+      } else {
+        add('file', { src, label: lbl, _a: a });
+      }
+    }
+  });
+
+  return items;
+}
+
+/* ════════════════════════════════════════════
+   RENDER ALL (chunked for performance)
+════════════════════════════════════════════ */
+async function renderAll() {
+  const container = document.getElementById('msgs');
+  const prog      = document.getElementById('prog');
+  container.innerHTML = '';
+  prog.style.width = '0';
+
+  const CHUNK = 80;
+  for (let i = 0; i < msgs.length; i += CHUNK) {
+    const frag = document.createDocumentFragment();
+    msgs.slice(i, i + CHUNK).forEach(m => frag.appendChild(makeCard(m)));
+    container.appendChild(frag);
+
+    const pct = Math.round(((i + CHUNK) / msgs.length) * 100);
+    prog.style.width = Math.min(pct, 100) + '%';
+
+    if (i + CHUNK < msgs.length) await tick();
+  }
+
+  prog.style.width = '100%';
+  setTimeout(() => { prog.style.width = '0'; }, 600);
+  applyF();
+  updateStat();
+}
+
+const tick = () => new Promise(r => setTimeout(r, 0));
+
+/* ════════════════════════════════════════════
+   MAKE CARD
+════════════════════════════════════════════ */
+function makeCard(msg) {
+  const card = document.createElement('div');
+  card.id = 'c-' + msg.id;
+
+  if (msg.isSvc) {
+    card.className = 'card svc';
+    card.textContent = msg.element.textContent.trim();
+    return card;
+  }
+
+  // Determine participant slot for bubble styling
+  const p1 = participants.length > 0 ? participants[0] : null;
+  const p2 = participants.length > 1 ? participants[1] : null;
+  const isP1 = p1 && msg.name === p1;
+  const isP2 = p2 && msg.name === p2;
+
+  card.className = 'card' + (isP1 ? ' p1' : isP2 ? ' p2' : '');
+
+  /* ── header ── */
+  const hdr = document.createElement('div');
+  hdr.className = 'ch';
+
+  // Helper: build badge elements
+  const addBadges = (target) => {
+    if (msg.isTr) {
+      const vc = /voice/i.test(msg.trEl?.className || '');
+      badge(target, vc ? 'bv' : 'bvid', vc ? '🎤 Голос' : '🎬 Видео');
+    }
+    if (msg.hasMed && !msg.isTr)   badge(target, 'bm', '📷 Медиа');
+    if (msg.isFwd)                  badge(target, 'bf', '↪ Переслан');
+    if (msg.hasLinks)               badge(target, 'bl', '🔗 Ссылка');
+    if (!msg.isTr && !msg.hasMed && !msg.isFwd && !msg.hasLinks)
+                                    badge(target, 'bt', '💬 Текст');
+  };
+
+  const timeStr = msg.time
+    ? msg.time.replace(/ UTC[+-]\d+:\d+$/, '').replace(/:\d\d$/, '')
+    : null;
+
+  if (isP2) {
+    // p2: timestamp LEFT, [spacer], badges, sender name RIGHT
+    if (timeStr) {
+      const t = el('span', 'ts');
+      t.style.marginLeft = '0';
+      t.textContent = timeStr;
+      hdr.appendChild(t);
+    }
+    const sp = el('span', '');
+    sp.style.flex = '1';
+    hdr.appendChild(sp);
+    addBadges(hdr);
+    if (msg.name) {
+      const s = el('span', 'sender');
+      s.textContent = msg.name;
+      hdr.appendChild(s);
+    }
+  } else {
+    // p1 or unknown: badges, sender name LEFT, timestamp RIGHT
+    addBadges(hdr);
+    if (msg.name) {
+      const s = el('span', 'sender');
+      s.textContent = msg.name;
+      hdr.appendChild(s);
+    }
+    if (timeStr) {
+      const t = el('span', 'ts');
+      t.textContent = timeStr;
+      hdr.appendChild(t);
+    }
+  }
+
+  card.appendChild(hdr);
+
+  /* ── body ── */
+  const body = el('div', 'cbody');
+
+  msg.txtBlocks.forEach((b, i) => {
+    if (b.fwd) {
+      const fw = el('div', 'fwd-block');
+      if (b.from) { const fr = el('div', 'fwd-from'); fr.textContent = '↪ ' + b.from; fw.appendChild(fr); }
+      const p = el('div', 'ptxt'); p.id = 'ptxt-' + msg.id + '-' + i; p.innerHTML = b.html; fw.appendChild(p);
+      body.appendChild(fw);
+    } else {
+      const p = el('div', 'ptxt'); p.id = 'ptxt-' + msg.id + '-' + i; p.innerHTML = b.html; body.appendChild(p);
+    }
+  });
+
+  if (msg.media.length > 0) {
+    const row = el('div', 'media-row');
+    msg.media.forEach(item => row.appendChild(makeMI(item)));
+    body.appendChild(row);
+  }
+
+  if (msg.isTr) {
+    const tb = el('div', 'tr-block');
+    if (msg.metaTxt) { const m = el('div', 'tr-meta'); m.textContent = msg.metaTxt; tb.appendChild(m); }
+    const tt = el('div', 'tr-text'); tt.id = 'tt-' + msg.id; tt.textContent = msg.transTxt;
+    tb.appendChild(tt);
+    body.appendChild(tb);
+  }
+
+  card.appendChild(body);
+
+  /* ── controls ── */
+  const ctrl = el('div', 'cctrl');
+
+  const delBtn = el('button', 'cb cdel'); delBtn.textContent = '🗑 Удалить';
+  delBtn.onclick = () => toggleDel(msg.id, card, delBtn);
+  ctrl.appendChild(delBtn);
+
+  if (msg.txtBlocks.length > 0) {
+    const hasTrToo = msg.isTr && msg.transEl;
+    const txtEditBtn = el('button', 'cb cedit');
+    txtEditBtn.textContent = hasTrToo ? '✏️ Текст' : '✏️ Редактировать';
+    txtEditBtn.onclick = () => openTextEdit(msg, txtEditBtn, body);
+    ctrl.appendChild(txtEditBtn);
+  }
+
+  if (msg.isTr && msg.transEl) {
+    const hasTextToo = msg.txtBlocks.length > 0;
+    const editBtn = el('button', 'cb cedit');
+    editBtn.textContent = hasTextToo ? '✏️ Транскрипцию' : '✏️ Редактировать';
+    editBtn.onclick = () => openEdit(msg, editBtn, body);
+    ctrl.appendChild(editBtn);
+  }
+
+  card.appendChild(ctrl);
+  return card;
+}
+
+function badge(parent, cls, txt) {
+  const b = el('span', 'badge ' + cls); b.textContent = txt; parent.appendChild(b);
+}
+function el(tag, cls) {
+  const e = document.createElement(tag); if (cls) e.className = cls; return e;
+}
+
+/* ════════════════════════════════════════════
+   MEDIA ITEM RENDERER
+════════════════════════════════════════════ */
+function makeMI(item) {
+  const wrap = el('div', '');
+
+  switch (item.type) {
+    case 'photo': {
+      const img = document.createElement('img');
+      img.className = 'mi-photo';
+      img.src = item.thumb || item.full || '';
+      img.loading = 'lazy';
+      img.alt = '';
+      if (item.full) { img.onclick = () => window.open(item.full, '_blank'); img.title = 'Открыть'; }
+      wrap.appendChild(img);
+      break;
+    }
+    case 'audio': {
+      wrap.appendChild(createAudioPlayer(item.src, item.label, item.voice));
+      break;
+    }
+    case 'video': {
+      const vidWrap = el('div', 'vid-wrap');
+      const v = document.createElement('video');
+      v.className = item.round ? 'mi-video-round' : 'mi-video';
+      v.controls = true; v.preload = 'none'; v.src = item.src;
+      if (item.poster) v.poster = item.poster;
+      vidWrap.appendChild(v);
+      // Speed controls for video
+      vidWrap.appendChild(makeSpeedRow(rate => { v.playbackRate = rate; }));
+      wrap.appendChild(vidWrap);
+      break;
+    }
+    case 'sticker': {
+      const d = el('div', 'mi-sticker');
+      d.textContent = item.animated ? '✨ Анимированный стикер' : ('🖼 ' + (item.label || 'Стикер'));
+      wrap.appendChild(d);
+      break;
+    }
+    case 'file': {
+      const a = document.createElement('a');
+      a.href = item.src; a.target = '_blank'; a.rel = 'noopener';
+      a.style.cssText = 'font-size:12px;color:var(--accent)';
+      a.textContent = '📎 ' + (item.label || item.src.split('/').pop());
+      wrap.appendChild(a);
+      break;
+    }
+  }
+
+  return wrap;
+}
+
+/* Build a row of speed buttons; onRate(rate) is called on click */
+function makeSpeedRow(onRate) {
+  const row = el('div', 'spd-row');
+  [1, 1.5, 2, 2.5, 3].forEach(rate => {
+    const btn = el('button', 'spd-btn' + (rate === 1 ? ' on' : ''));
+    btn.textContent = '×' + rate;
+    btn.title = 'Скорость ×' + rate;
+    btn.onclick = () => {
+      row.querySelectorAll('.spd-btn').forEach(b => b.classList.remove('on'));
+      btn.classList.add('on');
+      onRate(rate);
+    };
+    row.appendChild(btn);
+  });
+  return row;
+}
+
+/* ════════════════════════════════════════════
+   CUSTOM AUDIO PLAYER
+════════════════════════════════════════════ */
+const allPlayers = [];
+
+function createAudioPlayer(src, label, isVoice) {
+  const wrap = el('div', 'ap');
+
+  const btn = el('button', 'ap-play');
+  btn.title = 'Воспроизвести';
+  btn.innerHTML = '&#9654;';
+  wrap.appendChild(btn);
+
+  const center = el('div', 'ap-center');
+
+  if (label) {
+    const lbl = el('div', 'ap-lbl');
+    lbl.textContent = isVoice ? ('🎤 ' + label) : ('🎵 ' + label);
+    center.appendChild(lbl);
+  }
+
+  const track = el('div', 'ap-track');
+  const fill  = el('div', 'ap-fill');
+  track.appendChild(fill);
+  center.appendChild(track);
+
+  // Speed controls row
+  const audio = new Audio();
+  audio.preload = 'metadata';
+  audio.src = src;
+  center.appendChild(makeSpeedRow(rate => { audio.playbackRate = rate; }));
+
+  wrap.appendChild(center);
+
+  const timeEl = el('span', 'ap-time');
+  timeEl.textContent = '0:00';
+  wrap.appendChild(timeEl);
+
+  let dragging = false;
+
+  audio.addEventListener('loadedmetadata', () => {
+    timeEl.textContent = fmtTime(audio.duration);
+  });
+
+  audio.addEventListener('timeupdate', () => {
+    if (dragging || !audio.duration) return;
+    fill.style.width = (audio.currentTime / audio.duration * 100) + '%';
+    timeEl.textContent = fmtTime(audio.currentTime) + ' / ' + fmtTime(audio.duration);
+  });
+
+  audio.addEventListener('ended', () => {
+    btn.innerHTML = '&#9654;';
+    wrap.classList.remove('playing');
+    fill.style.width = '0';
+    timeEl.textContent = '0:00' + (audio.duration ? ' / ' + fmtTime(audio.duration) : '');
+    audio.currentTime = 0;
+  });
+
+  btn.addEventListener('click', () => {
+    if (!audio.paused) {
+      audio.pause();
+      btn.innerHTML = '&#9654;';
+      wrap.classList.remove('playing');
+    } else {
+      allPlayers.forEach(p => {
+        if (p.audio !== audio && !p.audio.paused) {
+          p.audio.pause();
+          p.btn.innerHTML = '&#9654;';
+          p.wrap.classList.remove('playing');
+        }
+      });
+      audio.play().catch(() => {});
+      btn.innerHTML = '&#9646;&#9646;';
+      wrap.classList.add('playing');
+    }
+  });
+
+  const seek = (e) => {
+    const r = track.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    if (audio.duration) {
+      audio.currentTime = pct * audio.duration;
+      fill.style.width = (pct * 100) + '%';
+    }
+  };
+  track.addEventListener('mousedown', e => { dragging = true; seek(e); });
+  document.addEventListener('mousemove', e => { if (dragging) seek(e); });
+  document.addEventListener('mouseup',  () => { dragging = false; });
+
+  allPlayers.push({ audio, btn, wrap });
+  return wrap;
+}
+
+function fmtTime(s) {
+  if (!isFinite(s)) return '0:00';
+  const m = Math.floor(s / 60);
+  return m + ':' + Math.floor(s % 60).toString().padStart(2, '0');
+}
+
+/* ════════════════════════════════════════════
+   DELETE / RESTORE
+════════════════════════════════════════════ */
+function toggleDel(id, card, btn) {
+  if (delIds.has(id)) {
+    delIds.delete(id);
+    card.classList.remove('del');
+    btn.className = 'cb cdel'; btn.textContent = '🗑 Удалить';
+  } else {
+    delIds.add(id);
+    card.classList.add('del');
+    btn.className = 'cb cres'; btn.textContent = '↩ Восстановить';
+
+    const m   = msgs.find(x => x.id === id);
+    const lbl = (m?.name ? m.name + ': ' : '') +
+                (m?.transTxt || m?.txtBlocks?.[0]?.html?.replace(/<[^>]+>/g,'') || id).slice(0, 50);
+    showToast(lbl, () => {
+      if (!delIds.has(id)) return;
+      delIds.delete(id);
+      card.classList.remove('del');
+      btn.className = 'cb cdel'; btn.textContent = '🗑 Удалить';
+      updateStat(); applyF();
+    });
+  }
+  updateStat(); applyF();
+}
+
+/* ── Delete ALL forwarded ── */
+function delAllFwd() {
+  const targets = msgs.filter(m => m.isFwd && !m.isSvc && !delIds.has(m.id));
+  if (targets.length === 0) { alert('Все пересланные уже помечены или их нет.'); return; }
+  if (!confirm(`Пометить ${targets.length} пересланных сообщений на удаление?`)) return;
+
+  targets.forEach(m => {
+    delIds.add(m.id);
+    const card = document.getElementById('c-' + m.id);
+    if (!card) return;
+    card.classList.add('del');
+    const dBtn = card.querySelector('.cdel');
+    if (dBtn) { dBtn.className = 'cb cres'; dBtn.textContent = '↩ Восстановить'; }
+  });
+
+  // Bulk undo toast
+  const panel = document.getElementById('up');
+  const t = el('div', 'toast');
+  const txt = el('span', 'toast-txt');
+  txt.textContent = `Помечено на удаление: ${targets.length} пересланных`;
+  t.appendChild(txt);
+
+  const ub = el('button', 'cb cres'); ub.textContent = '↩ Отменить всё';
+  ub.onclick = () => {
+    targets.forEach(m => {
+      if (!delIds.has(m.id)) return;
+      delIds.delete(m.id);
+      const card = document.getElementById('c-' + m.id);
+      if (!card) return;
+      card.classList.remove('del');
+      const dBtn = card.querySelector('.cres');
+      if (dBtn) { dBtn.className = 'cb cdel'; dBtn.textContent = '🗑 Удалить'; }
+    });
+    updateStat(); applyF();
+    t.remove();
+  };
+  t.appendChild(ub);
+
+  const cb = el('button', 'cb'); cb.textContent = '✕'; cb.onclick = () => t.remove();
+  t.appendChild(cb);
+  panel.appendChild(t);
+  setTimeout(() => t.remove(), 30000);
+
+  updateStat(); applyF();
+}
+
+function showToast(label, onUndo, borderColor) {
+  const panel = document.getElementById('up');
+  const t = el('div', 'toast');
+  if (borderColor) t.style.borderColor = borderColor;
+
+  const txt = el('span', 'toast-txt');
+  txt.textContent = 'Удалено: «' + label + '»';
+  t.appendChild(txt);
+
+  const ub = el('button', 'cb cres'); ub.textContent = '↩ Отменить';
+  ub.onclick = () => { onUndo(); t.remove(); };
+  t.appendChild(ub);
+
+  const cb = el('button', 'cb'); cb.textContent = '✕';
+  cb.onclick = () => t.remove();
+  t.appendChild(cb);
+
+  panel.appendChild(t);
+  setTimeout(() => t.remove(), 30000);
+}
+
+/* ════════════════════════════════════════════
+   EDIT PLAIN TEXT
+════════════════════════════════════════════ */
+function openTextEdit(msg, editBtn, cardBody) {
+  if (activeEditorClose) activeEditorClose();
+  if (!msg.txtBlocks || msg.txtBlocks.length === 0) return;
+
+  editBtn.style.display = 'none';
+
+  const form    = el('div', 'ef');
+  const entries = [];
+
+  msg.txtBlocks.forEach((block, i) => {
+    const ptxt = document.getElementById('ptxt-' + msg.id + '-' + i);
+
+    if (block.fwd && block.from) {
+      const lbl = el('div', 'tr-meta');
+      lbl.style.marginBottom = '3px';
+      lbl.textContent = '↪ ' + block.from;
+      form.appendChild(lbl);
+    }
+
+    const ta = document.createElement('textarea');
+    const origVal = block.el
+      ? block.el.textContent.trim()
+      : block.html.replace(/<[^>]+>/g, '').trim();
+    ta.value = origVal;
+    ta.style.cssText =
+      'width:100%;min-height:60px;background:#080a10;color:var(--text);' +
+      'border:1px solid var(--accent);border-radius:6px;padding:8px;' +
+      'font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;display:block;' +
+      (i > 0 ? 'margin-top:6px;' : '');
+    form.appendChild(ta);
+
+    if (ptxt) ptxt.style.display = 'none';
+    entries.push({ ta, ptxt, block, origVal });
+  });
+
+  const btns = el('div', 'efbtns');
+  btns.style.marginTop = '6px';
+
+  const sv = el('button', 'cb csave'); sv.textContent = '✓ Сохранить';
+  sv.onclick = () => {
+    entries.forEach(({ ta, ptxt, block }) => {
+      const v = ta.value;
+      if (ptxt) { ptxt.textContent = v; ptxt.style.display = ''; }
+      if (block.el) block.el.textContent = v;
+    });
+    form.remove();
+    editBtn.style.display = '';
+    activeEditorClose = null;
+  };
+
+  const rst = el('button', 'cb creset'); rst.textContent = '↺ Сбросить';
+  rst.onclick = () => entries.forEach(({ ta, origVal }) => { ta.value = origVal; });
+
+  const cc = el('button', 'cb ccancel'); cc.textContent = '✗ Отмена';
+  cc.onclick = close;
+
+  btns.appendChild(sv); btns.appendChild(rst); btns.appendChild(cc);
+  form.appendChild(btns);
+  cardBody.appendChild(form);
+
+  if (entries[0]?.ta) { entries[0].ta.focus(); entries[0].ta.select(); }
+
+  function close() {
+    entries.forEach(({ ptxt }) => { if (ptxt) ptxt.style.display = ''; });
+    form.remove();
+    editBtn.style.display = '';
+    activeEditorClose = null;
+  }
+  activeEditorClose = close;
+}
+
+/* ════════════════════════════════════════════
+   EDIT TRANSCRIPTION
+════════════════════════════════════════════ */
+function openEdit(msg, editBtn, cardBody) {
+  if (activeEditorClose) activeEditorClose();
+
+  const ttDiv = document.getElementById('tt-' + msg.id);
+  if (!ttDiv) return;
+
+  const form = el('div', 'ef');
+  const ta   = document.createElement('textarea');
+  const origTrVal = msg.transEl.textContent.trim();
+  ta.value   = origTrVal;
+  form.appendChild(ta);
+
+  const btns = el('div', 'efbtns');
+
+  const sv = el('button', 'cb csave'); sv.textContent = '✓ Сохранить';
+  sv.onclick = () => {
+    const v = ta.value;
+    ttDiv.textContent = v;
+    msg.transEl.textContent = v;
+    msg.transTxt = v;
+    close();
+  };
+
+  const rst = el('button', 'cb creset'); rst.textContent = '↺ Сбросить';
+  rst.onclick = () => { ta.value = origTrVal; };
+
+  const cc = el('button', 'cb ccancel'); cc.textContent = '✗ Отмена';
+  cc.onclick = close;
+
+  btns.appendChild(sv); btns.appendChild(rst); btns.appendChild(cc); form.appendChild(btns);
+  editBtn.style.display = 'none';
+  ttDiv.parentElement.appendChild(form);
+  ta.focus(); ta.select();
+
+  function close() { form.remove(); editBtn.style.display = ''; activeEditorClose = null; }
+  activeEditorClose = close;
+}
+
+/* ════════════════════════════════════════════
+   FILTERS
+════════════════════════════════════════════ */
+function setF(type, silent) {
+  curF = type;
+  ['ba','bm','bl','bf'].forEach(id => document.getElementById(id)?.classList.remove('on'));
+  const map = { 'null':'ba', media:'bm', links:'bl', fwd:'bf' };
+  document.getElementById(map[String(type)])?.classList.add('on');
+  if (!silent) { applyF(); updateStat(); }
+}
+
+function applyF() {
+  msgs.forEach(m => {
+    const card = document.getElementById('c-' + m.id);
+    if (!card || m.isSvc) return;
+
+    // ── Fix #1: Re-sync del class from ground-truth delIds set ──
+    // This ensures switching filters never causes deleted state to be lost
+    const isDel = delIds.has(m.id);
+    if (isDel && !card.classList.contains('del')) {
+      card.classList.add('del');
+      const dBtn = card.querySelector('.cdel');
+      if (dBtn) { dBtn.className = 'cb cres'; dBtn.textContent = '↩ Восстановить'; }
+    } else if (!isDel && card.classList.contains('del')) {
+      card.classList.remove('del');
+      const rBtn = card.querySelector('.cres');
+      if (rBtn) { rBtn.className = 'cb cdel'; rBtn.textContent = '🗑 Удалить'; }
+    }
+
+    // ── Type filter ──
+    let vis = true;
+    if      (curF === 'media') vis = m.isTr || m.hasMed;
+    else if (curF === 'links') vis = m.hasLinks;
+    else if (curF === 'fwd')   vis = m.isFwd;
+
+    // ── Name filter (AND logic with type filter) ──
+    if (curNameF !== null && m.name !== curNameF) vis = false;
+
+    card.classList.toggle('hid', !vis);
+  });
+}
+
+/* ════════════════════════════════════════════
+   STATS
+════════════════════════════════════════════ */
+function updateStat() {
+  const total = msgs.filter(m => !m.isSvc).length;
+  const tr    = msgs.filter(m => m.isTr).length;
+  const del   = delIds.size;
+  const vis   = msgs.filter(m => {
+    if (m.isSvc) return false;
+    const c = document.getElementById('c-' + m.id);
+    return c && !c.classList.contains('hid') && !c.classList.contains('del');
+  }).length;
+  document.getElementById('stat').textContent =
+    `Всего: ${total} | Транскр.: ${tr} | Видимых: ${vis} | Удалено: ${del}`;
+}
+
+/* ════════════════════════════════════════════
+   SAVE HTML
+════════════════════════════════════════════ */
+function saveHTML() {
+  if (!origDoc) return;
+  if (!delIds.size && !confirm('Удалённых нет. Сохранить с исправлениями транскрипций?')) return;
+
+  // Remove deleted elements from origDoc
+  delIds.forEach(id => { const e = origDoc.getElementById(id); if (e) e.remove(); });
+
+  const html = '<!DOCTYPE html>\n' + origDoc.documentElement.outerHTML;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = origName;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+  // Remove cards from UI
+  delIds.forEach(id => { document.getElementById('c-' + id)?.remove(); });
+  delIds.clear();
+
+  // Reparse for stats
+  msgs = parseMsgs(origDoc);
+  updateStat();
+
+  const panel = document.getElementById('up');
+  const t = el('div', 'toast'); t.style.borderColor = 'var(--green)';
+  const txt = el('span', 'toast-txt'); txt.textContent = '✅ Сохранено: ' + origName; t.appendChild(txt);
+  const cb = el('button', 'cb'); cb.textContent = '✕'; cb.onclick = () => t.remove(); t.appendChild(cb);
+  panel.appendChild(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
+/* init */
+document.getElementById('ba').classList.add('on');
+</script>
+</body>
+</html>

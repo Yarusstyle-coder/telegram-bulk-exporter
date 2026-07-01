@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-md">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 space-y-4">
+        <div class="flex items-center gap-3">
+            <i data-lucide="shield-check" class="w-6 h-6 text-accent-400"></i>
+            <h1 class="text-2xl font-semibold">Облачный пароль</h1>
+        </div>
+        <p class="text-sm text-slate-400">
+            У этого аккаунта включён облачный пароль Telegram (2FA). Введите его,
+            чтобы завершить вход. Пароль никуда не сохраняется — он используется
+            только для этой попытки.
+        </p>
+
+        {% if error %}
+        <div class="rounded-lg border border-rose-900/50 bg-rose-950/40 p-3 text-sm text-rose-300">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/auth/telegram/password" class="space-y-4">
+            <label class="block">
+                <span class="text-sm text-slate-300">Пароль Telegram</span>
+                <input type="password" name="password" required autofocus
+                       autocomplete="current-password"
+                       class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-slate-100 focus:border-accent-500 focus:outline-none" />
+            </label>
+            <button type="submit"
+                    class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 font-medium transition">
+                Войти
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

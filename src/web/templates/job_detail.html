@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Задача {{ job.id[:8] }}{% endblock %}
+
+{% block content %}
+<div class="space-y-4" x-data="jobDetail('{{ job.id }}', '{{ job.status.value }}', {{ job.percent }})">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-semibold">Задача <span class="text-slate-500">{{ job.id[:8] }}</span></h1>
+            <p class="text-sm text-slate-500">Создана {{ job.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        </div>
+        {# Button highlighting follows the current job status — only the action
+           that's actually applicable RIGHT NOW gets the bright accent fill:
+             * active (running/exporting/downloading/deduping/pending) →
+               Pause + Cancel are the live actions; Resume is dimmed.
+             * paused or failed → Resume is the live action; Pause has nothing
+               to pause, Cancel is dimmed.
+             * terminal (succeeded / cancelled) → everything dimmed; user
+               just reads the log + clicks Back.
+           x-bind:class flips Tailwind utility groups so the contrast is
+           obvious without redrawing the buttons. #}
+        <div class="flex gap-2">
+            <button
+                x-bind:class="isActive
+                    ? 'bg-accent-600 hover:bg-accent-500'
+                    : 'bg-slate-800 hover:bg-slate-700 opacity-50 cursor-not-allowed'"
+                x-bind:disabled="!isActive"
+                class="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition"
+                hx-post="/jobs/{{ job.id }}/pause"
+                hx-swap="none"
+                title="Пауза — фоновый процесс tdl останавливается, прогресс по чатам сохраняется"
+            >
+                <i data-lucide="pause" class="w-4 h-4"></i> Пауза
+            </button>
+            <button
+                x-bind:class="isResumable
+                    ? 'bg-accent-600 hover:bg-accent-500'
+                    : 'bg-slate-800 hover:bg-slate-700 opacity-50 cursor-not-allowed'"
+                x-bind:disabled="!isResumable"
+                class="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition"
+                hx-post="/jobs/{{ job.id }}/resume"
+                hx-swap="none"
+                title="Возобновить с last_exported_message_id (доступно для paused / failed)"
+            >
+                <i data-lucide="play" class="w-4 h-4"></i> Возобновить
+            </button>
+            <button
+                x-bind:class="isActive
+                    ? 'bg-rose-600/30 hover:bg-rose-600/60 text-rose-100'
+                    : 'bg-slate-800 hover:bg-slate-700 opacity-50 cursor-not-allowed'"
+                x-bind:disabled="!isActive"
+                class="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition"
+                hx-post="/jobs/{{ job.id }}/cancel"
+                hx-swap="none"
+                title="Отменить задачу полностью"
+            >
+                <i data-lucide="square" class="w-4 h-4"></i> Отмена
+            </button>
+            <a href="/jobs" class="inline-flex items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2 text-sm">
+                <i data-lucide="arrow-left" class="w-4 h-4"></i> Назад
+            </a>
+        </div>
+    </div>
+
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
+        <div class="flex items-center justify-between text-sm">
+            <span class="text-slate-400">Статус</span>
+            <span x-text="status" class="font-medium"></span>
+        </div>
+        <div class="h-2 bg-slate-800 rounded overflow-hidden">
+            <div
+                class="h-full bg-gradient-to-r from-accent-500 via-accent-400 to-violet-500 animate-shimmer bg-[length:200%_100%] transition-all"
+                :style="`width: ${percent}%`"
+            ></div>
+        </div>
+        <div class="flex justify-between text-xs text-slate-500">
+            <span x-text="`${current}/${total}`"></span>
+            <span x-text="`${percent.toFixed(0)}%`"></span>
+            <span x-text="filename"></span>
+        </div>
+    </div>
+
+    <div class="rounded-2xl border border-slate-800 bg-black/60 p-0">
+        <div class="px-4 py-2 text-xs text-slate-500 border-b border-slate-800 flex items-center justify-between">
+            <span>Лог</span>
+            <span x-text="`${log.length} строк`"></span>
+        </div>
+        <pre
+            x-ref="logPane"
+            class="overflow-auto max-h-96 p-4 text-xs font-mono text-slate-300 whitespace-pre-wrap"
+        ><template x-for="(line, i) in log" :key="i"><span x-text="line + '\n'"></span></template></pre>
+    </div>
+</div>
+
+<script>
+function jobDetail(jobId, initialStatus, initialPct) {
+    /* Statuses we consider "live" (Pause + Cancel apply). Mirrors the
+       _ACTIVE_STATUSES set on the server side so the button states
+       stay consistent with /jobs?status=active. */
+    const ACTIVE = new Set(['pending', 'running', 'exporting', 'downloading', 'deduping']);
+    /* Statuses where Resume is the meaningful action. Both PAUSED and
+       FAILED accept /jobs/{id}/resume — the runner replays from
+       last_exported_message_id either way. */
+    const RESUMABLE = new Set(['paused', 'failed']);
+    return {
+        jobId,
+        status: initialStatus || 'pending',
+        percent: initialPct || 0,
+        current: 0,
+        total: 0,
+        filename: '',
+        log: [],
+        ws: null,
+        get isActive() { return ACTIVE.has(this.status); },
+        get isResumable() { return RESUMABLE.has(this.status); },
+        init() {
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            this.ws = new WebSocket(`${proto}://${location.host}/jobs/${this.jobId}/stream`);
+            this.ws.addEventListener('message', (e) => {
+                let frame;
+                try { frame = JSON.parse(e.data); } catch { return; }
+                if (frame.error) {
+                    this.log.push(`[error] ${frame.error}`);
+                    return;
+                }
+                if (frame.kind === 'progress') {
+                    if (frame.percent != null) this.percent = frame.percent;
+                    if (frame.current != null) this.current = frame.current;
+                    if (frame.total   != null) this.total   = frame.total;
+                    if (frame.file)          this.filename = frame.file;
+                    this.log.push(`[${frame.ts}] ${frame.percent?.toFixed?.(0) ?? '?'}% ${frame.file ?? ''}`);
+                } else if (frame.kind === 'status') {
+                    this.status = frame.status;
+                    this.log.push(`[${frame.ts}] status=${frame.status}`);
+                } else if (frame.kind === 'log') {
+                    this.log.push(`[${frame.ts}] ${frame.message}`);
+                } else if (frame.kind === 'error') {
+                    this.log.push(`[${frame.ts}] ERROR: ${frame.message}`);
+                } else if (frame.kind === 'complete') {
+                    this.status = frame.status;
+                    this.log.push(`[${frame.ts}] complete — saved ${frame.bytes_saved ?? 0} bytes via dedup`);
+                }
+                this.$nextTick(() => {
+                    const pane = this.$refs.logPane;
+                    pane.scrollTop = pane.scrollHeight;
+                });
+            });
+        },
+    };
+}
+</script>
+{% endblock %}

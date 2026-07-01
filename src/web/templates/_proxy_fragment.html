@@ -1,0 +1,67 @@
+{% if error %}
+<div class="px-4 py-2 text-sm text-rose-300 bg-rose-500/10 border-b border-rose-500/20">
+    {{ error }}
+</div>
+{% endif %}
+
+{% if entries|length == 0 %}
+<div class="p-6 text-center text-sm text-slate-500">
+    Пул пуст. Добавь первый прокси формой выше.
+</div>
+{% else %}
+<ul role="list" class="divide-y divide-slate-800">
+    {% for e in entries %}
+    {% set active = (e.url == active_url) %}
+    <li class="px-4 py-3 flex flex-col gap-1 {% if active %}bg-accent-500/5{% endif %}">
+        <div class="flex items-center gap-3 flex-wrap">
+            <span class="font-mono text-xs text-slate-300 break-all">{{ e.url }}</span>
+            {% if e.from_env %}
+            <span class="text-[10px] uppercase tracking-wider text-slate-500 bg-slate-800 rounded px-1.5 py-0.5">env</span>
+            {% endif %}
+            {% if active %}
+            <span class="text-[10px] uppercase tracking-wider text-accent-300 bg-accent-500/15 rounded px-1.5 py-0.5">active</span>
+            {% endif %}
+            {% if e.label %}
+            <span class="text-xs text-slate-400">{{ e.label }}</span>
+            {% endif %}
+        </div>
+        <div class="flex items-center justify-between text-xs">
+            <div class="text-slate-500 flex items-center gap-3">
+                {% if e.last_status == 'ok' %}
+                    <span class="text-emerald-400 inline-flex items-center gap-1">
+                        <i data-lucide="check" class="w-3 h-3"></i> {{ e.last_latency_ms }} ms
+                    </span>
+                {% elif e.last_status == 'timeout' %}
+                    <span class="text-amber-400 inline-flex items-center gap-1">
+                        <i data-lucide="clock" class="w-3 h-3"></i> timeout
+                    </span>
+                {% elif e.last_status == 'fail' %}
+                    <span class="text-rose-400 inline-flex items-center gap-1" title="{{ e.last_error }}">
+                        <i data-lucide="x" class="w-3 h-3"></i> {{ e.last_error|truncate(40, True, '…') }}
+                    </span>
+                {% else %}
+                    <span class="text-slate-600">не тестировался</span>
+                {% endif %}
+                {% if e.last_tested_at %}
+                <span>· {{ e.last_tested_at }}</span>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-1">
+                {% if not active %}
+                <form hx-post="/proxy/select" hx-target="#proxy-grid" hx-swap="innerHTML">
+                    <input type="hidden" name="url" value="{{ e.url }}" />
+                    <button class="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">сделать активным</button>
+                </form>
+                {% endif %}
+                <form hx-post="/proxy/delete" hx-target="#proxy-grid" hx-swap="innerHTML">
+                    <input type="hidden" name="url" value="{{ e.url }}" />
+                    <button class="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-rose-600/30 text-slate-400 hover:text-rose-200">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

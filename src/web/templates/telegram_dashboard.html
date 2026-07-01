@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Telegram · Telegram Bulk Exporter{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center gap-3">
+        <i data-lucide="send" class="w-6 h-6 text-accent-400"></i>
+        <h1 class="text-xl font-semibold">Подключение Telegram</h1>
+    </div>
+
+    {% include "_flash.html" %}
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Card 1: API credentials -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+            <div class="flex items-center gap-2">
+                <i data-lucide="key-round" class="w-5 h-5 text-accent-400"></i>
+                <h2 class="font-medium">API-доступ</h2>
+                {% if credentials_configured %}
+                <span class="ml-auto inline-flex items-center rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium">
+                    настроено
+                </span>
+                {% else %}
+                <span class="ml-auto inline-flex items-center rounded-full bg-amber-500/15 text-amber-300 px-2 py-0.5 text-[11px] font-medium">
+                    требуется
+                </span>
+                {% endif %}
+            </div>
+            <p class="text-xs text-slate-400">
+                Получите <code>api_id</code> и <code>api_hash</code> на
+                <a class="underline text-accent-300" href="https://my.telegram.org/apps" target="_blank" rel="noopener">my.telegram.org/apps</a>.
+                Они хранятся зашифрованными (AES-256-GCM) в локальной БД.
+            </p>
+
+            <form method="post" action="/auth/telegram/credentials" class="space-y-2">
+                <label class="block">
+                    <span class="text-xs text-slate-300">api_id</span>
+                    <input type="text" name="api_id" inputmode="numeric"
+                           {% if api_id_masked %}placeholder="{{ api_id_masked }} (уже сохранено)"{% endif %}
+                           required
+                           class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+                </label>
+                <label class="block">
+                    <span class="text-xs text-slate-300">api_hash</span>
+                    <input type="password" name="api_hash" required
+                           class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:border-accent-500 focus:outline-none" />
+                </label>
+                <button type="submit"
+                        class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 text-sm font-medium transition">
+                    Сохранить
+                </button>
+            </form>
+        </div>
+
+        <!-- Card 2: Connection -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+            <div class="flex items-center gap-2">
+                <i data-lucide="plug-zap" class="w-5 h-5 text-accent-400"></i>
+                <h2 class="font-medium">Подключение</h2>
+                {% if is_authorized %}
+                <span class="ml-auto inline-flex items-center rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium">
+                    активно
+                </span>
+                {% elif has_manager %}
+                <span class="ml-auto inline-flex items-center rounded-full bg-amber-500/15 text-amber-300 px-2 py-0.5 text-[11px] font-medium">
+                    в процессе
+                </span>
+                {% else %}
+                <span class="ml-auto inline-flex items-center rounded-full bg-slate-700 text-slate-300 px-2 py-0.5 text-[11px] font-medium">
+                    не подключено
+                </span>
+                {% endif %}
+            </div>
+            <p class="text-xs text-slate-400">
+                После подключения мы увидим ваши диалоги и сможем запускать экспорт.
+                Ни один байт не покидает ваш компьютер.
+            </p>
+
+            <form method="post" action="/auth/telegram/start" class="space-y-2">
+                <label class="block">
+                    <span class="text-xs text-slate-300">Номер телефона (E.164)</span>
+                    <input type="tel" name="phone" placeholder="+491701234567"
+                           value="{{ phone or '' }}" required
+                           {% if not credentials_configured %}disabled{% endif %}
+                           class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:border-accent-500 focus:outline-none disabled:opacity-40" />
+                </label>
+                <button type="submit"
+                        {% if not credentials_configured %}disabled{% endif %}
+                        class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed">
+                    {% if is_authorized %}Переподключить{% else %}Подключить{% endif %}
+                </button>
+            </form>
+
+            {% if has_manager or is_authorized %}
+            <form method="post" action="/auth/telegram/disconnect">
+                <button type="submit"
+                        class="w-full rounded-xl border border-rose-900/50 bg-rose-950/30 hover:bg-rose-950/50 py-2 text-sm font-medium text-rose-200 transition">
+                    <i data-lucide="unplug" class="w-4 h-4 inline"></i>
+                    Отключить
+                </button>
+            </form>
+            {% endif %}
+        </div>
+
+        <!-- Card 3: Phone -->
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+            <div class="flex items-center gap-2">
+                <i data-lucide="phone" class="w-5 h-5 text-accent-400"></i>
+                <h2 class="font-medium">Номер</h2>
+            </div>
+            {% if phone %}
+            <p class="text-sm text-slate-200">{{ phone }}</p>
+            <p class="text-xs text-slate-500">
+                Этот номер использовался для последнего входа. Он хранится
+                зашифрованным в локальной БД.
+            </p>
+            {% else %}
+            <p class="text-sm text-slate-400">
+                Номер появится здесь после первого успешного входа.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- tdl session card -->
+    {% if tdl_ready %}
+    <div class="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-3">
+        <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-5 h-5 text-emerald-300"></i>
+            <h2 class="font-medium">Сессия tdl</h2>
+            <span class="ml-auto inline-flex items-center rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium">
+                активна
+            </span>
+        </div>
+        <p class="text-xs text-slate-300 max-w-3xl">
+            tdl авторизован (<code>~/.tdl/data/default</code>). Можно запускать экспорт.
+        </p>
+        <div class="flex gap-2 flex-wrap">
+            <a href="/chats"
+               class="inline-flex items-center gap-2 rounded-xl bg-accent-600 hover:bg-accent-500 text-white px-3 py-2 text-sm font-medium">
+                <i data-lucide="list" class="w-4 h-4"></i>
+                К чатам
+            </a>
+            <a href="/auth/telegram/tdl-login"
+               class="inline-flex items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2 text-sm">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                Перелогинить tdl
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <div class="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 space-y-3">
+        <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-5 h-5 text-amber-300"></i>
+            <h2 class="font-medium">Сессия tdl</h2>
+            <span class="ml-auto inline-flex items-center rounded-full bg-amber-500/15 text-amber-300 px-2 py-0.5 text-[11px] font-medium">
+                нужно отдельно
+            </span>
+        </div>
+        <p class="text-xs text-slate-300 max-w-3xl">
+            Telethon (списки чатов, аватарки) и tdl (медиа-загрузка) работают
+            на разных сессиях. Если запустить экспорт сейчас, увидите
+            <code>not authorized. please login first</code>.
+        </p>
+        <a href="/auth/telegram/tdl-login"
+           class="inline-flex items-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-900 px-3 py-2 text-sm font-medium">
+            <i data-lucide="qr-code" class="w-4 h-4"></i>
+            Авторизовать tdl
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

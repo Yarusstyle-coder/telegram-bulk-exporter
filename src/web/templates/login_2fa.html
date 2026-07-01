@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-md">
+    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+        <div class="flex items-center gap-3 mb-4">
+            <i data-lucide="shield" class="w-6 h-6 text-accent-400"></i>
+            <h1 class="text-2xl font-semibold">Второй фактор</h1>
+        </div>
+        <p class="text-sm text-slate-400 mb-6">
+            Введите 6-значный код из приложения-аутентификатора или один из резервных кодов
+            (формат <code>XXXX-XXXX-XXXX</code>).
+        </p>
+
+        {% if error %}
+        <div class="mb-4 rounded-lg border border-red-900/50 bg-red-950/40 p-3 text-sm text-red-300">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/login/2fa" class="space-y-4"
+              x-data="{ code: '' }"
+              x-effect="if (/^\d{6}$/.test(code)) $el.requestSubmit()">
+            <label class="block">
+                <span class="text-sm text-slate-300">Код</span>
+                <input type="text" name="code" required
+                       inputmode="text" autocomplete="one-time-code" autofocus
+                       x-model="code"
+                       class="mt-1 block w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-slate-100 tracking-widest text-center focus:border-accent-500 focus:outline-none" />
+            </label>
+
+            <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="checkbox" name="remember" value="1" checked
+                       class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-accent-500 focus:ring-accent-500" />
+                <span>Запомнить на этом устройстве (сохранить сессию между перезапусками)</span>
+            </label>
+
+            <fieldset class="space-y-1">
+                <legend class="text-xs uppercase tracking-wider text-slate-500 mb-1">
+                    Спрашивать пароль повторно
+                </legend>
+                {% for label, seconds, slug in lock_choices %}
+                <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                    <input type="radio" name="lock_duration" value="{{ slug }}"
+                           {% if slug == current_lock_slug %}checked{% endif %}
+                           class="h-4 w-4 border-slate-600 bg-slate-800 text-accent-500 focus:ring-accent-500" />
+                    <span>{{ label }}</span>
+                </label>
+                {% endfor %}
+            </fieldset>
+
+            <button type="submit"
+                    class="w-full rounded-xl bg-accent-600 hover:bg-accent-500 py-2 font-medium transition">
+                Подтвердить
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
